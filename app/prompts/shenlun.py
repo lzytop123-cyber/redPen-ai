@@ -97,8 +97,8 @@ def build_shenlun_essay_step1_prompts(question: Question, student_answer: str) -
     )
     user_prompt = (
         f"【大作文题目要求】\n{question.prompt}\n\n"
-        f"【给定材料核心摘要】\n{question.material_summary[:3000]}\n\n"
-        f"【参考立意/范文参考】\n{question.reference_answer[:1500]}\n\n"
+        f"【给定材料】\n{question.material_summary}\n\n"
+        f"【参考立意/范文参考】\n{question.reference_answer}\n\n"
         f"【考生大作文原文】\n{student_answer}\n\n"
         "请严格按维度定档并输出 JSON。"
     )
@@ -139,7 +139,7 @@ def build_shenlun_essay_step3_prompts(
     )
     user_prompt = (
         f"【题目要求】\n{question.prompt}\n\n"
-        f"【给定材料摘要】\n{question.material_summary[:2500]}\n\n"
+        f"【给定材料】\n{question.material_summary}\n\n"
         f"【考生原稿】\n{student_answer}\n\n"
         f"【本次诊断问题】\n{step1.model_dump_json(ensure_ascii=False)}\n\n"
         "请输出同思路升格版大作文及核心提分亮点 JSON。"

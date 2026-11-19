@@ -134,7 +134,7 @@ def main() -> None:
                 paper=paper,
                 sub_type=sub_type,
                 prompt=stem,
-                material_summary=material[:4500],
+                material_summary=material,
                 full_score=full_score,
                 min_words=min_w,
                 max_words=max_w,

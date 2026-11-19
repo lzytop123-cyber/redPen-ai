@@ -99,7 +99,7 @@ def parse_md_paper(path: Path) -> list[Question]:
                 paper=f"{province}-{year}",
                 sub_type=sub_type,
                 prompt=prompt,
-                material_summary=materials_text[:4500],
+                material_summary=materials_text,
                 full_score=full_score,
                 min_words=min_w,
                 max_words=max_w,
