@@ -1,0 +1,12 @@
+{
+  "miniprogramRoot": "dist/build/mp-weixin/",
+  "appid": "touristappid",
+  "projectname": "ai-grading-miniprogram",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "postcss": true,
+    "minified": true
+  },
+  "compileType": "miniprogram"
+}

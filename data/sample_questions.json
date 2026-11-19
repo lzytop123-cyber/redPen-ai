@@ -1,0 +1,51 @@
+[
+  {
+    "question_id": "SL_2025_DEMO_01",
+    "exam_type": "shenlun_short",
+    "title": "【申论小题演示】概括老旧小区改造中面临的主要问题",
+    "prompt": "根据给定资料，概括当前部分老旧小区在改造与后续治理中面临的主要问题。要求：全面、准确、有条理，不超过 250 字。",
+    "material_summary": "资料反映多个城市推进老旧小区改造，但出现：1. 地下管网老化严重、停车位严重不足且缺乏适老化无障碍设施；2. 改造完成后缺乏长效物业管理，业委会难成立，居民参与度低，多元共治机制缺失；3. 改造与运维资金主要靠政府财政兜底，社会资本缺乏盈利预期不愿进入，资金缺口大；4. 部分改造搞“一刀切”刷墙面子工程，忽视了“一老一小”等居民差异化实际需求。",
+    "full_score": 15.0,
+    "min_words": 120,
+    "max_words": 250,
+    "scoring_points": [
+      {
+        "point_id": "P1",
+        "keyword": "硬件设施滞后",
+        "description": "地下管网老化、公共停车位不足、缺乏适老化/无障碍设施",
+        "score": 3.0
+      },
+      {
+        "point_id": "P2",
+        "keyword": "长效治理机制缺失",
+        "description": "物业管理不到位、业委会难成立、居民参与度低、缺乏多元共治",
+        "score": 3.0
+      },
+      {
+        "point_id": "P3",
+        "keyword": "资金筹措渠道单一",
+        "description": "过度依赖财政补贴、社会资本参与度低、后续运维资金缺口大",
+        "score": 3.0
+      },
+      {
+        "point_id": "P4",
+        "keyword": "服务脱离群众需求",
+        "description": "存在一刀切和面子工程，未能满足一老一小等差异化精细服务需求",
+        "score": 3.0
+      }
+    ],
+    "reference_answer": "1. 硬件设施滞后：管网老化、停车位紧张，适老化设施不足。\n2. 治理机制缺失：长效物业缺位，业委会难成立，居民参与及多元共治不足。\n3. 资金保障不足：过度依赖财政补贴，社会资本参与意愿低，资金缺口大。\n4. 改造脱离实际：存在一刀切面子工程，忽视一老一小差异化需求。"
+  },
+  {
+    "question_id": "KY_ENG_DEMO_01",
+    "exam_type": "kaoyan_english",
+    "title": "【考研英语大作文演示】年轻人热衷传统文化热潮",
+    "prompt": "Write an essay of 160-200 words based on the chart showing a rapid rise in young people visiting museums and intangible cultural heritage workshops. You should: 1) interpret the chart; 2) analyze the reasons; 3) give your comments.",
+    "material_summary": "",
+    "full_score": 20.0,
+    "min_words": 150,
+    "max_words": 240,
+    "scoring_points": [],
+    "reference_answer": ""
+  }
+]

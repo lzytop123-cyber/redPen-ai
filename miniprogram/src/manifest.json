@@ -1,0 +1,19 @@
+{
+  "name": "AI主观题精批",
+  "appid": "__UNI__AIGRADING",
+  "description": "考公申论与考研英语作文 AI 红笔精批与升格教练",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "mp-weixin": {
+    "appid": "wx0000000000000000",
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "postcss": true,
+      "minified": true
+    },
+    "usingComponents": true
+  },
+  "vueVersion": "3"
+}

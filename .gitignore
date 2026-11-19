@@ -1,0 +1,23 @@
+# Environment & secrets (NEVER commit .env)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Generated outputs & local runtime data
+output/
+data/app.db
+data/app.db-*
+data/uploads/
+data/raw/shenlun_github.jsonl
+
+# MiniProgram dependencies & build artifacts
+miniprogram/node_modules/
+miniprogram/dist/
+miniprogram/unpackage/
