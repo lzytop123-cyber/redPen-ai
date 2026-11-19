@@ -121,18 +121,21 @@ async def main() -> None:
     sem = asyncio.Semaphore(args.concurrency)
     updated: list[dict] = []
 
+    save_lock = asyncio.Lock()
+
     async def worker(item: dict):
         async with sem:
             try:
                 await enrich_one(router, item)
-                updated.append(item)
+                async with save_lock:
+                    updated.append(item)
+                    await save_updates([item], all_items)
                 pts = len(item.get("scoring_points") or [])
-                print(f"  [OK] {item['question_id']} | {item['title']} (采分点: {pts})")
+                print(f"  [OK & SAVED] ({len(updated)}/{len(targets)}) {item['question_id']} | {item['title']} (采分点: {pts})", flush=True)
             except Exception as e:
-                print(f"  [FAIL] {item['question_id']}: {e}")
+                print(f"  [FAIL] {item['question_id']}: {e}", flush=True)
 
     await asyncio.gather(*(worker(it) for it in targets))
-    await save_updates(updated, all_items)
 
     print(f"\n已更新 {len(updated)} 道真题至 JSON 与数据库！\n")
     for it in updated:

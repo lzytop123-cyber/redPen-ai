@@ -37,9 +37,9 @@
       </view>
     </view>
 
-    <!-- 地区 & 细分题型筛选器（仅申论大类下展示） -->
-    <view v-if="activeType !== 'kaoyan_english'" class="filter-panel">
-      <view class="filter-row">
+    <!-- 地区 & 细分题型筛选器 -->
+    <view class="filter-panel">
+      <view v-if="activeType !== 'kaoyan_english'" class="filter-row">
         <text class="filter-label">地区</text>
         <scroll-view scroll-x class="chip-scroll">
           <view class="chip-list">
@@ -66,6 +66,22 @@
               @click="selectSubType(s.value)"
             >
               {{ s.label }}
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+
+      <view v-if="activeType === 'kaoyan_english'" class="filter-row">
+        <text class="filter-label">分类</text>
+        <scroll-view scroll-x class="chip-scroll">
+          <view class="chip-list">
+            <view
+              v-for="k in kaoyanSubTypes"
+              :key="k.value"
+              :class="['chip', activeSubType === k.value ? 'chip-active' : '']"
+              @click="selectSubType(k.value)"
+            >
+              {{ k.label }}
             </view>
           </view>
         </scroll-view>
@@ -136,6 +152,14 @@ const subTypes = [
   { label: "公文写作", value: "公文写作" },
 ];
 
+const kaoyanSubTypes = [
+  { label: "全部", value: "" },
+  { label: "英语一·大作文", value: "英语一·大作文" },
+  { label: "英语一·小作文", value: "英语一·小作文" },
+  { label: "英语二·大作文", value: "英语二·大作文" },
+  { label: "英语二·小作文", value: "英语二·小作文" },
+];
+
 const activeType = ref("shenlun_short");
 const activeRegion = ref("");
 const activeSubType = ref("");
@@ -154,7 +178,7 @@ async function fetchQuestions() {
     if (activeType.value !== "kaoyan_english" && activeRegion.value) {
       params.push(`region=${encodeURIComponent(activeRegion.value)}`);
     }
-    if (activeType.value === "shenlun_short" && activeSubType.value) {
+    if ((activeType.value === "shenlun_short" || activeType.value === "kaoyan_english") && activeSubType.value) {
       params.push(`sub_type=${encodeURIComponent(activeSubType.value)}`);
     }
     if (keyword.value.trim()) {
@@ -172,9 +196,7 @@ async function fetchQuestions() {
 
 function selectTab(val: string) {
   activeType.value = val;
-  if (val !== "shenlun_short") {
-    activeSubType.value = "";
-  }
+  activeSubType.value = "";
   fetchQuestions();
 }
 

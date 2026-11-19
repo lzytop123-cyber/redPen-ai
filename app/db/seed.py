@@ -15,7 +15,11 @@ async def seed_questions_if_empty(db: AsyncSession) -> int:
 
     inserted = 0
     seen_ids: set[str] = set()
-    for path in [Path("data/shenlun_questions.json"), Path("data/sample_questions.json")]:
+    for path in [
+        Path("data/shenlun_questions.json"),
+        Path("data/kaoyan_questions.json"),
+        Path("data/sample_questions.json"),
+    ]:
         if not path.exists():
             continue
         items = json.loads(path.read_text(encoding="utf-8"))
