@@ -16,6 +16,7 @@ data/app.db
 data/app.db-*
 data/uploads/
 data/raw/shenlun_github.jsonl
+data/raw/provinces_all/
 
 # MiniProgram dependencies & build artifacts
 miniprogram/node_modules/

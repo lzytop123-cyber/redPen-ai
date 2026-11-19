@@ -20,6 +20,32 @@ def _word_limits(q: QuestionModel) -> dict[str, int]:
 router = APIRouter(prefix="/api/questions", tags=["真题库"])
 
 
+@router.get("/regions")
+async def list_regions(db: AsyncSession = Depends(get_db)):
+    """动态返回当前申论题库覆盖的所有地区与题目数量（国考排首位，其余按题量降序）"""
+    stmt = select(QuestionModel.paper).where(
+        ~QuestionModel.question_id.startswith("CUSTOM_"),
+        QuestionModel.exam_type.in_(["shenlun_short", "shenlun_essay"]),
+    )
+    papers = (await db.execute(stmt)).scalars().all()
+    counts: dict[str, int] = {}
+    for p in papers:
+        if not p:
+            continue
+        reg = p.split("-")[0].strip()
+        if reg:
+            counts[reg] = counts.get(reg, 0) + 1
+
+    ordered = sorted(
+        counts.items(),
+        key=lambda kv: (0 if kv[0] == "国考" else 1, -kv[1], kv[0]),
+    )
+    return {
+        "total_regions": len(ordered),
+        "items": [{"label": k, "value": k, "count": v} for k, v in ordered],
+    }
+
+
 @router.get("")
 async def list_questions(
     exam_type: Optional[str] = Query(default=None, description="shenlun_short / shenlun_essay / kaoyan_english"),

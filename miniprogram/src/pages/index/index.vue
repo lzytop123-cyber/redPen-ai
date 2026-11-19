@@ -3,7 +3,7 @@
     <!-- 顶部品牌栏 -->
     <view class="header">
       <view class="title">AI 阅卷级主观题精批</view>
-      <view class="subtitle">内置 340+ 道国考 / 山西 / 贵州 / 广东 / 湖北真题</view>
+      <view class="subtitle">覆盖全国 31 省市历年国考/省考申论与考研英语真题</view>
       <view class="search-box">
         <input
           v-model="keyword"
@@ -136,14 +136,30 @@ const tabs = [
   { label: "考研英语", value: "kaoyan_english" },
 ];
 
-const regions = [
+const regions = ref<Array<{ label: string; value: string }>>([
   { label: "全部", value: "" },
   { label: "国考", value: "国考" },
   { label: "山西", value: "山西" },
   { label: "贵州", value: "贵州" },
   { label: "广东", value: "广东" },
   { label: "湖北", value: "湖北" },
-];
+]);
+
+async function fetchRegions() {
+  try {
+    const res = await request<{ items: Array<{ label: string; value: string; count: number }> }>({
+      url: "/api/questions/regions",
+    });
+    if (res.items && res.items.length > 0) {
+      regions.value = [
+        { label: "全部", value: "" },
+        ...res.items.map((r) => ({ label: r.label, value: r.value })),
+      ];
+    }
+  } catch {
+    // 兜底保留默认列表
+  }
+}
 
 const subTypes = [
   { label: "全部", value: "" },
@@ -219,7 +235,10 @@ function goCustomSubmit() {
   uni.navigateTo({ url: `/pages/submit/submit?mode=custom` });
 }
 
-onMounted(fetchQuestions);
+onMounted(() => {
+  fetchRegions();
+  fetchQuestions();
+});
 </script>
 
 <style scoped>

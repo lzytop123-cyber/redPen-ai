@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from collections import Counter
 from datetime import datetime
@@ -15,12 +16,74 @@ from app.db.database import AsyncSessionLocal, get_db
 from app.db.models import GradingTask, QuestionModel, User
 from app.llm_client import LLMRouter
 from app.pipeline import GradingPipeline
+from app.point_builder import build_grounded_scoring_points
 from app.schemas import ExamType, Question, ScoringPoint
 from app.utils import count_words
 
 router = APIRouter(prefix="/api/grading", tags=["AI 精批引擎"])
 UPLOAD_DIR = Path("data/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# 按 question_id 维度的内存互斥锁，防止并发首次提交同一道新题时重复生成采分点
+_POINT_GEN_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _get_point_lock(question_id: str) -> asyncio.Lock:
+    lock = _POINT_GEN_LOCKS.get(question_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _POINT_GEN_LOCKS[question_id] = lock
+    return lock
+
+
+async def ensure_cached_scoring_points(
+    question: Question,
+    router_client: LLMRouter,
+    on_progress=None,
+) -> Question:
+    """
+    懒加载 + 永久缓存机制：
+    当某道申论小题首次被提交且尚无标准采分点时，自动基于完整材料构建 v2 采分点并永久写入数据库；
+    后续所有用户提交该题直接复用数据库缓存，0 额外延迟、0 重复费用。
+    """
+    if (
+        question.exam_type != ExamType.SHENLUN_SHORT
+        or question.scoring_points
+        or question.question_id.startswith("CUSTOM_")
+        or not (question.material_summary or "").strip()
+    ):
+        return question
+
+    async with _get_point_lock(question.question_id):
+        # 双重检查：若刚才已有并发请求生成并落库，直接复用
+        async with AsyncSessionLocal() as session:
+            row = await session.get(QuestionModel, question.question_id)
+            if row and row.scoring_points:
+                question.scoring_points = [ScoringPoint.model_validate(p) for p in row.scoring_points]
+                if row.reference_answer:
+                    question.reference_answer = row.reference_answer
+                return question
+
+        if on_progress:
+            await on_progress("Step 0/3: 首次评阅本题，正在基于完整材料自动构建 v2 标准采分点并缓存...")
+
+        points, ref_ans, sub_type = await build_grounded_scoring_points(router_client, question)
+        if points:
+            question.scoring_points = points
+            question.reference_answer = ref_ans
+            if sub_type:
+                question.sub_type = sub_type
+
+            async with AsyncSessionLocal() as session:
+                row = await session.get(QuestionModel, question.question_id)
+                if row:
+                    row.scoring_points = [p.model_dump() for p in points]
+                    row.reference_answer = ref_ans
+                    if sub_type:
+                        row.sub_type = sub_type
+                    await session.commit()
+
+    return question
 
 
 class SubmitGradingReq(BaseModel):
@@ -70,8 +133,12 @@ async def _execute_grading_task(task_id: str, question: Question, student_answer
                 await session.commit()
 
     try:
+        router_client = LLMRouter()
+        if not use_mock:
+            question = await ensure_cached_scoring_points(question, router_client, on_progress=update_progress)
+
         await update_progress("Step 1/3: 正在对照官方评分细则与采分点核对...")
-        pipeline = GradingPipeline()
+        pipeline = GradingPipeline(router=router_client)
         report = await pipeline.run(
             question=question,
             student_answer=student_answer,

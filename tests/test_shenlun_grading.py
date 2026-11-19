@@ -87,3 +87,29 @@ class ShenlunGradingTests(unittest.TestCase):
             dict(point_matches=matches, structure_score_ratio=1, structure_comment="测试"),
             context=ctx,
         )
+
+    def test_point_builder_filters_ungrounded_quotes(self):
+        from app.point_builder import PointBuildOutput, PointDraft, build_grounded_scoring_points
+
+        q = Question(
+            question_id="SC-2023-TEST-S01",
+            exam_type="shenlun_short",
+            title="四川测试题",
+            prompt="概括主要做法（15分），不超过200字。",
+            material_summary="给定材料1：S市通过建立数字化监测平台实现了全天候精准监管，同时引入社会资本参与老旧管网改造。",
+            full_score=15.0,
+        )
+        fake_out = PointBuildOutput(
+            sub_type="单一题（归纳概括）",
+            scoring_points=[
+                PointDraft(keyword="数字精准监管", description="建立数字化监测平台", weight=3, material_quote="建立数字化监测平台实现了全天候精准监管"),
+                PointDraft(keyword="幻觉编造点", description="不存在的内容", weight=2, material_quote="这段话在原文里根本不存在"),
+            ],
+            reference_answer="1.数字精准监管。",
+        )
+        router = LLMRouter()
+        with patch.object(router, "call_structured", new=AsyncMock(return_value=fake_out)):
+            pts, ref, sub = asyncio.run(build_grounded_scoring_points(router, q))
+        self.assertEqual(len(pts), 1)
+        self.assertEqual(pts[0].keyword, "数字精准监管")
+        self.assertEqual(sub, "单一题（归纳概括）")

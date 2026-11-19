@@ -13,8 +13,19 @@ from app.db.models import QuestionModel
 from app.schemas import ExamType, Question
 from scripts.import_shenlun_data import extract_full_score, extract_word_limits
 
-PROVINCE_DIR = Path("data/raw/provinces")
+PROVINCE_DIR = Path("data/raw/provinces_all")
+FALLBACK_DIR = Path("data/raw/provinces")
 OUT_JSON = Path("data/shenlun_questions.json")
+
+PROVINCE_CODES = {
+    "北京": "BJ", "天津": "TJ", "上海": "SH", "重庆": "CQ",
+    "河北": "HE", "山西": "SX", "辽宁": "LN", "吉林": "JL", "黑龙江": "HL",
+    "江苏": "JS", "浙江": "ZJ", "安徽": "AH", "福建": "FJ", "江西": "JX",
+    "山东": "SD", "河南": "HA", "湖北": "HB", "湖南": "HN", "广东": "GD",
+    "海南": "HI", "四川": "SC", "贵州": "GZ", "云南": "YN", "陕西": "SN",
+    "甘肃": "GS", "青海": "QH", "内蒙古": "NM", "广西": "GX", "西藏": "XZ",
+    "宁夏": "NX", "新疆": "XJ", "国考": "GK",
+}
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
@@ -74,7 +85,7 @@ def parse_md_paper(path: Path) -> list[Question]:
     )
     parts = [p.strip() for p in parts if len(p.strip()) >= 15]
 
-    prov_code = {"山西": "SX", "贵州": "GZ"}.get(province, "PV")
+    prov_code = PROVINCE_CODES.get(province, "PV")
     tid = meta.get("tid") or path.stem[-4:]
 
     result: list[Question] = []
@@ -141,29 +152,30 @@ async def upsert_to_db(new_questions: list[Question]) -> int:
 
 
 async def main() -> None:
-    md_files = sorted(PROVINCE_DIR.glob("*.md"))
-    parsed: list[Question] = []
-    sx_cnt, gz_cnt = 0, 0
-    for f in md_files:
-        qs = parse_md_paper(f)
-        parsed.extend(qs)
-        if f.name.startswith("山西"):
-            sx_cnt += len(qs)
-        elif f.name.startswith("贵州"):
-            gz_cnt += len(qs)
+    target_dir = PROVINCE_DIR if PROVINCE_DIR.exists() else FALLBACK_DIR
+    md_files = sorted(target_dir.glob("*.md"))
 
-    # 1. 合并写入 data/shenlun_questions.json（按 question_id 去重）
     existing_items = json.loads(OUT_JSON.read_text(encoding="utf-8")) if OUT_JSON.exists() else []
     by_id = {item["question_id"]: item for item in existing_items}
-    for q in parsed:
-        by_id[q.question_id] = q.model_dump()
+
+    parsed: list[Question] = []
+    region_counts: dict[str, int] = {}
+    for f in md_files:
+        qs = parse_md_paper(f)
+        for q in qs:
+            if q.question_id in by_id:
+                continue
+            parsed.append(q)
+            by_id[q.question_id] = q.model_dump()
+            reg = q.paper.split("-")[0] if "-" in q.paper else q.paper
+            region_counts[reg] = region_counts.get(reg, 0) + 1
+
     merged = sorted(by_id.values(), key=lambda x: (x.get("year", 0), x["question_id"]), reverse=True)
     OUT_JSON.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # 2. 直接增量写入当前运行中的数据库
     db_added = await upsert_to_db(parsed)
 
-    print(f"解析完成！共新增山西 {sx_cnt} 道 + 贵州 {gz_cnt} 道 = {len(parsed)} 道省考申论真题")
+    print(f"全国省市真题解析完成！共扫描 {len(md_files)} 套卷，新增 {len(parsed)} 道题（覆盖 {len(region_counts)} 个省市）")
     print(f"  - JSON 题库总计: {len(merged)} 道 ({OUT_JSON})")
     print(f"  - 已实时写入数据库: +{db_added} 道")
 
