@@ -1,7 +1,16 @@
 from enum import Enum
+import re
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationInfo, model_validator
+
+from app.word_limits import short_answer_limits
+
+
+def _normalize_quote_text(text: str) -> str:
+    """去除空白/换行并统一常见全半角标点，避免 OCR 换行或标点差异误杀真实原文引用"""
+    s = re.sub(r"\s+", "", text)
+    return s.translate(str.maketrans({",": "，", ";": "；", ":": "：", "!": "！", "?": "？"}))
 
 
 class ExamType(str, Enum):
@@ -39,6 +48,15 @@ class Question(BaseModel):
     reference_answer: str = Field(default="", description="参考高分答案")
 
 
+    @model_validator(mode="after")
+    def apply_written_limits(self):
+        if self.exam_type == ExamType.SHENLUN_SHORT:
+            self.min_words, self.max_words = short_answer_limits(
+                self.prompt, self.min_words, self.max_words
+            )
+        return self
+
+
 # =========================
 # 2. 预处理句子模型
 # =========================
@@ -73,6 +91,23 @@ class ShenlunStep1Output(BaseModel):
     weakness_tags: list[str] = Field(
         default_factory=list, description="本次作答暴露的薄弱项标签，如['漏提对策','表达口语化']"
     )
+
+
+    @model_validator(mode="after")
+    def check_matches(self, info: ValidationInfo):
+        ids = [match.point_id for match in self.point_matches]
+        if info.context:
+            if len(ids) != len(set(ids)):
+                raise ValueError("每个采分点编号只能出现一次")
+            if set(ids) != info.context["point_ids"]:
+                raise ValueError("请严格使用题目提供的所有采分点编号，每点返回一次")
+            norm_answer = _normalize_quote_text(info.context["student_answer"])
+            for match in self.point_matches:
+                if match.status in ("hit", "partial"):
+                    quote = match.evidence_quote.strip()
+                    if not quote or _normalize_quote_text(quote) not in norm_answer:
+                        raise ValueError(f"{match.point_id} 的证据必须逐字摘自考生原文")
+        return self
 
 
 class DimensionRating(BaseModel):

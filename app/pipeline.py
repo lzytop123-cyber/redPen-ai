@@ -91,7 +91,13 @@ class GradingPipeline:
 
         if question.exam_type == ExamType.SHENLUN_SHORT:
             sys1, usr1 = build_shenlun_step1_prompts(question, student_answer)
-            shenlun_detail = await self.router.call_structured(sys1, usr1, ShenlunStep1Output)
+            shenlun_detail = await self.router.call_structured(
+                sys1, usr1, ShenlunStep1Output,
+                validation_context={
+                    "point_ids": {point.point_id for point in question.scoring_points},
+                    "student_answer": student_answer,
+                },
+            )
             final_score, band_label = calculate_shenlun_score(question, shenlun_detail, word_count)
             weakness_tags = shenlun_detail.weakness_tags
 

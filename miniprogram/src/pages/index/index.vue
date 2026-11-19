@@ -105,7 +105,7 @@
         </view>
         <view class="card-title">{{ q.title }}</view>
         <view class="card-meta">
-          <text v-if="q.max_words">字数要求：{{ q.min_words || 0 }}~{{ q.max_words }} 字</text>
+          <text v-if="q.min_words || q.max_words">字数要求：{{ formatWordLimits(q.min_words, q.max_words) }}</text>
           <text v-if="q.scoring_point_count > 0"> ｜ 含 {{ q.scoring_point_count }} 个标准采分点</text>
           <text v-else> ｜ 结合给定材料评阅</text>
         </view>
@@ -116,6 +116,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { formatWordLimits } from "@/utils/wordLimits";
 import { request } from "@/utils/request";
 
 interface QuestionItem {

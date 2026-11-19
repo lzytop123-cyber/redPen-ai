@@ -7,6 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_db
 from app.db.models import QuestionModel
 
+from app.word_limits import short_answer_limits
+
+
+def _word_limits(q: QuestionModel) -> dict[str, int]:
+    minimum, maximum = q.min_words, q.max_words
+    if q.exam_type == "shenlun_short":
+        minimum, maximum = short_answer_limits(q.prompt, minimum, maximum)
+    return {"min_words": minimum, "max_words": maximum}
+
+
 router = APIRouter(prefix="/api/questions", tags=["真题库"])
 
 
@@ -73,8 +83,7 @@ async def list_questions(
                 "paper": q.paper,
                 "sub_type": q.sub_type,
                 "full_score": q.full_score,
-                "min_words": q.min_words,
-                "max_words": q.max_words,
+                **_word_limits(q),
                 "scoring_point_count": len(q.scoring_points or []),
             }
             for q in rows
@@ -98,7 +107,6 @@ async def get_question_detail(question_id: str, db: AsyncSession = Depends(get_d
         "prompt": q.prompt,
         "material_summary": q.material_summary,
         "full_score": q.full_score,
-        "min_words": q.min_words,
-        "max_words": q.max_words,
+        **_word_limits(q),
         "scoring_point_count": len(q.scoring_points or []),
     }

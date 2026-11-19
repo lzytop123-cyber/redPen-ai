@@ -68,8 +68,8 @@
       />
       <view class="word-bar">
         <text>当前字数：{{ currentWordCount }}</text>
-        <text v-if="!isCustomMode && question?.max_words">
-          要求：{{ question.min_words }}~{{ question.max_words }}
+        <text v-if="!isCustomMode && (question?.min_words || question?.max_words)">
+          要求：{{ formatWordLimits(question.min_words, question.max_words) }}
         </text>
       </view>
     </view>
@@ -84,6 +84,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { formatWordLimits } from "@/utils/wordLimits";
 import { onLoad } from "@dcloudio/uni-app";
 import { request, uploadHandwriting } from "@/utils/request";
 

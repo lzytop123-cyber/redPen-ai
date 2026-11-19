@@ -28,7 +28,7 @@ def build_shenlun_step1_prompts(question: Question, student_answer: str) -> tupl
         f"【给定材料核心摘要】\n{question.material_summary}\n\n"
         f"【标准采分点列表】\n{points_text}\n\n"
         f"【考生作答原文】\n{student_answer}\n\n"
-        "请严格逐点核对并输出 JSON。"
+        "每个给定编号必须且只能出现一次。列表为空时返回空的 point_matches。命中证据逐字摘录连续原文。请输出 JSON。"
     )
     return system_prompt, user_prompt
 

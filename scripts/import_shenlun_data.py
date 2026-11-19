@@ -7,6 +7,7 @@ import json
 import re
 from pathlib import Path
 
+from app.word_limits import short_answer_limits
 from app.schemas import ExamType, Question, ScoringPoint
 
 RAW_PATH = Path("data/raw/shenlun_github.jsonl")
@@ -25,6 +26,10 @@ def extract_full_score(stem: str, is_essay: bool) -> float:
 
 
 def extract_word_limits(stem: str, is_essay: bool) -> tuple[int, int]:
+    if not is_essay:
+        limits = short_answer_limits(stem, 0, 0)
+        if any(limits):
+            return limits
     """提取最少/最多字数要求"""
     # 区间格式：1000～1200字 / 800-1000字
     m_range = re.search(r"(\d{3,4})\s*[～~—\-至到]\s*(\d{3,4})\s*字", stem)

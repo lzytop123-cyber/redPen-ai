@@ -33,6 +33,9 @@
             <text class="pid">{{ m.point_id }}</text>
             <text :class="['badge', m.status]">{{ statusLabel[m.status] || m.status }}</text>
           </view>
+          <view v-if="m.status !== 'miss' && m.evidence_quote" class="point-comment">
+            作答原文：{{ m.evidence_quote }}
+          </view>
           <view class="point-comment">{{ m.comment }}</view>
         </view>
       </view>

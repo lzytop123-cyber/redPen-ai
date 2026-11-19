@@ -69,7 +69,11 @@ def calculate_shenlun_score(
     structure_full = max(0.0, question.full_score - points_total_possible)
 
     earned_points = 0.0
+    seen_ids = set()
     for m in step1.point_matches:
+        if m.point_id in seen_ids:
+            raise ValueError(f"采分点 {m.point_id} 重复，无法计分")
+        seen_ids.add(m.point_id)
         base = point_map.get(m.point_id, 0.0)
         if m.status == "hit":
             earned_points += base

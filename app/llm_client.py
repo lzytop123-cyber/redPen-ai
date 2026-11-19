@@ -53,6 +53,7 @@ class LLMRouter:
         user_prompt: str,
         response_model: Type[T],
         max_retries: int = 2,
+        validation_context: dict | None = None,
     ) -> T:
         """调用文本大模型并严格校验返回为指定 Pydantic 模型"""
         schema_json = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
@@ -79,7 +80,7 @@ class LLMRouter:
                 )
                 content = resp.choices[0].message.content or "{}"
                 cleaned = self._extract_json(content)
-                return response_model.model_validate_json(cleaned)
+                return response_model.model_validate_json(cleaned, context=validation_context)
             except (ValidationError, json.JSONDecodeError) as e:
                 last_err = e
                 # 把校验错误反馈给模型做一次自修复重试

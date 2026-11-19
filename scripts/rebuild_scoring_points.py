@@ -179,7 +179,10 @@ async def main() -> None:
                 try:
                     ok, reason = await rebuild_one(router, item)
                     break
-                except Exception as e:  # 限流/网络错误时退避重试
+                except Exception as e:  # 余额不足立即报错，限流/网络错误退避重试
+                    if "402" in str(e) or "Insufficient Balance" in str(e):
+                        print(f"  [STOP] DeepSeek 余额不足 (402)，已中止剩余任务。充值后重新运行即可断点续跑。", flush=True)
+                        return
                     if attempt == 2:
                         async with lock:
                             stats["fail"] += 1
