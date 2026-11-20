@@ -18,7 +18,9 @@ data/uploads/
 data/raw/shenlun_github.jsonl
 data/raw/provinces_all/
 
-# MiniProgram dependencies & build artifacts
+# MiniProgram & Admin dependencies & build artifacts
 miniprogram/node_modules/
 miniprogram/dist/
 miniprogram/unpackage/
+admin-web/node_modules/
+admin-web/dist/

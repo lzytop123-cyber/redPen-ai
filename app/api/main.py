@@ -1,7 +1,10 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes_admin import router as admin_router
 from app.api.routes_auth import router as auth_router
@@ -45,3 +48,21 @@ app.include_router(grading_router)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# 挂载独立 Vue 3 运营后台静态产物 (admin-web/dist)
+ADMIN_DIST = Path("admin-web/dist")
+if (ADMIN_DIST / "assets").exists():
+    app.mount("/admin/assets", StaticFiles(directory=str(ADMIN_DIST / "assets")), name="admin-assets")
+
+
+@app.get("/admin", include_in_schema=False)
+@app.get("/admin/{full_path:path}", include_in_schema=False)
+async def serve_admin_spa(full_path: str = ""):
+    index_file = ADMIN_DIST / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return HTMLResponse(
+        "<h3>后台前端尚未构建，请在 admin-web 目录运行 npm install && npm run build</h3>",
+        status_code=503,
+    )

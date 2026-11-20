@@ -1,71 +1,529 @@
 """
-知行岛申论精批 — 轻量级运营管理后台 (/admin 与 /api/admin/*)
-内置在 FastAPI 中，零额外前端部署成本，通过 ADMIN_PASSWORD 保护。
-支持：运营数据看板、兑换码批量生成与核销查询、用户售后补次/开月卡、任务监控与题库采分点在线微调。
+知行岛申论精批 — 商业级运营管理后台 API (/api/admin/*)
+涵盖 6 大模块：运营看板、批改质检与退次、真题与可视化采分点 CRUD、用户管理、卡密生成/作废/CSV 导出、系统连通性检测。
 """
 
+import csv
+import io
 import secrets
 import string
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
-from fastapi.responses import HTMLResponse
+import httpx
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.database import get_db
 from app.db.models import GradingTask, QuestionModel, RedeemCode, User
+from app.llm_client import LLMRouter
+from app.point_builder import build_grounded_scoring_points
+from app.schemas import ExamType, Question, ScoringPoint
 
-router = APIRouter(tags=["运营后台"])
+router = APIRouter(prefix="/api/admin", tags=["运营后台 API"])
+UPLOAD_DIR = Path("data/uploads").resolve()
 
 
-def verify_admin(x_admin_password: Optional[str] = Header(default=None)) -> None:
-    if not x_admin_password or x_admin_password != settings.admin_password:
-        raise HTTPException(status_code=401, detail="管理员密码错误")
+def verify_admin(
+    x_admin_password: Optional[str] = Header(default=None),
+    pwd: Optional[str] = Query(default=None),
+) -> None:
+    token = x_admin_password or pwd
+    if not token or token != settings.admin_password:
+        raise HTTPException(status_code=401, detail="管理员密码错误或未登录")
 
 
-@router.get("/api/admin/stats", dependencies=[Depends(verify_admin)])
+# =========================
+# 1. 运营总览看板与趋势
+# =========================
+
+@router.get("/stats", dependencies=[Depends(verify_admin)])
 async def admin_stats(db: AsyncSession = Depends(get_db)):
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
     total_users = await db.scalar(select(func.count(User.id))) or 0
+    today_users = await db.scalar(select(func.count(User.id)).where(User.created_at >= today_start)) or 0
+    active_vips = await db.scalar(select(func.count(User.id)).where(User.vip_expire_at > now)) or 0
+
     total_tasks = await db.scalar(select(func.count(GradingTask.task_id))) or 0
     today_tasks = (
         await db.scalar(select(func.count(GradingTask.task_id)).where(GradingTask.created_at >= today_start)) or 0
     )
+    completed_tasks = (
+        await db.scalar(select(func.count(GradingTask.task_id)).where(GradingTask.status == "completed")) or 0
+    )
     failed_tasks = (
         await db.scalar(select(func.count(GradingTask.task_id)).where(GradingTask.status == "failed")) or 0
     )
-    total_questions = (
-        await db.scalar(
-            select(func.count(QuestionModel.question_id)).where(~QuestionModel.question_id.startswith("CUSTOM_"))
+
+    q_rows = (
+        await db.execute(
+            select(QuestionModel.exam_type, QuestionModel.scoring_points).where(
+                ~QuestionModel.question_id.startswith("CUSTOM_")
+            )
         )
-        or 0
-    )
+    ).all()
+    total_questions = len(q_rows)
+    short_total = sum(1 for et, _ in q_rows if et == "shenlun_short")
+    short_with_points = sum(1 for et, pts in q_rows if et == "shenlun_short" and pts and len(pts) > 0)
+
     unused_codes = await db.scalar(select(func.count(RedeemCode.code)).where(RedeemCode.is_used == 0)) or 0
     used_codes = await db.scalar(select(func.count(RedeemCode.code)).where(RedeemCode.is_used == 1)) or 0
 
+    # 近 7 天批改趋势
+    seven_days_ago = today_start - timedelta(days=6)
+    recent_dates = (
+        await db.execute(select(GradingTask.created_at).where(GradingTask.created_at >= seven_days_ago))
+    ).scalars().all()
+    day_counts: dict[str, int] = {}
+    for i in range(7):
+        d_str = (seven_days_ago + timedelta(days=i)).strftime("%m-%d")
+        day_counts[d_str] = 0
+    for dt in recent_dates:
+        if dt:
+            k = dt.strftime("%m-%d")
+            if k in day_counts:
+                day_counts[k] += 1
+    trend_7d = [{"date": k, "count": v} for k, v in day_counts.items()]
+
+    # 热门被练真题 Top 10
+    top_q_rows = (
+        await db.execute(
+            select(GradingTask.question_id, GradingTask.question_title, func.count(GradingTask.task_id).label("cnt"))
+            .group_by(GradingTask.question_id, GradingTask.question_title)
+            .order_by(desc("cnt"))
+            .limit(10)
+        )
+    ).all()
+
+    finished_total = completed_tasks + failed_tasks
+    success_rate = round((completed_tasks / finished_total) * 100, 1) if finished_total > 0 else 100.0
+
     return {
         "total_users": total_users,
+        "today_users": today_users,
+        "active_vips": active_vips,
         "total_tasks": total_tasks,
         "today_tasks": today_tasks,
+        "completed_tasks": completed_tasks,
         "failed_tasks": failed_tasks,
+        "success_rate": success_rate,
         "total_questions": total_questions,
+        "short_total": short_total,
+        "short_with_points": short_with_points,
         "unused_codes": unused_codes,
         "used_codes": used_codes,
+        "trend_7d": trend_7d,
+        "top_questions": [{"question_id": r[0], "title": r[1], "count": r[2]} for r in top_q_rows],
     }
 
 
+# =========================
+# 2. 批改记录、质检详情与退次
+# =========================
+
+@router.get("/tasks", dependencies=[Depends(verify_admin)])
+async def admin_list_tasks(
+    status: Optional[str] = Query(default=None),
+    exam_type: Optional[str] = Query(default=None),
+    keyword: Optional[str] = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(GradingTask)
+    cnt_stmt = select(func.count(GradingTask.task_id))
+
+    if status:
+        stmt = stmt.where(GradingTask.status == status)
+        cnt_stmt = cnt_stmt.where(GradingTask.status == status)
+    if exam_type:
+        stmt = stmt.where(GradingTask.exam_type == exam_type)
+        cnt_stmt = cnt_stmt.where(GradingTask.exam_type == exam_type)
+    if keyword:
+        like = f"%{keyword.strip()}%"
+        cond = or_(
+            GradingTask.question_title.ilike(like),
+            GradingTask.task_id.ilike(like),
+            GradingTask.question_id.ilike(like),
+        )
+        stmt = stmt.where(cond)
+        cnt_stmt = cnt_stmt.where(cond)
+
+    total = await db.scalar(cnt_stmt) or 0
+    rows = (
+        await db.execute(
+            stmt.order_by(desc(GradingTask.created_at)).offset((page - 1) * page_size).limit(page_size)
+        )
+    ).scalars().all()
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "items": [
+            {
+                "task_id": t.task_id,
+                "user_id": t.user_id,
+                "question_id": t.question_id,
+                "exam_type": t.exam_type,
+                "question_title": t.question_title,
+                "status": t.status,
+                "final_score": t.final_score,
+                "full_score": t.full_score,
+                "band_label": t.band_label,
+                "has_image": bool(t.image_path),
+                "error_message": t.error_message,
+                "created_at": t.created_at,
+                "finished_at": t.finished_at,
+            }
+            for t in rows
+        ],
+    }
+
+
+@router.get("/tasks/{task_id}", dependencies=[Depends(verify_admin)])
+async def admin_task_detail(task_id: str, db: AsyncSession = Depends(get_db)):
+    t = await db.get(GradingTask, task_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="批改任务不存在")
+    user = await db.get(User, t.user_id)
+    img_name = Path(t.image_path).name if t.image_path else None
+    return {
+        "task_id": t.task_id,
+        "user_id": t.user_id,
+        "user_nickname": user.nickname if user else "未知用户",
+        "question_id": t.question_id,
+        "exam_type": t.exam_type,
+        "question_title": t.question_title,
+        "status": t.status,
+        "progress_message": t.progress_message,
+        "error_message": t.error_message,
+        "student_answer": t.student_answer,
+        "image_filename": img_name,
+        "final_score": t.final_score,
+        "full_score": t.full_score,
+        "band_label": t.band_label,
+        "weakness_tags": t.weakness_tags or [],
+        "report": t.report_json,
+        "created_at": t.created_at,
+        "finished_at": t.finished_at,
+    }
+
+
+@router.post("/tasks/{task_id}/refund", dependencies=[Depends(verify_admin)])
+async def admin_refund_task(task_id: str, db: AsyncSession = Depends(get_db)):
+    """售后一键退还该任务对应用户的 1 次精批额度"""
+    t = await db.get(GradingTask, task_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    user = await db.get(User, t.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    user.paid_quota += 1
+    await db.commit()
+    return {"ok": True, "user_id": user.id, "paid_quota": user.paid_quota}
+
+
+@router.get("/uploads/{filename}", dependencies=[Depends(verify_admin)])
+async def admin_get_upload_image(filename: str):
+    """安全返回用户上传的手写答卷原图供后台质检放大查看"""
+    safe_path = (UPLOAD_DIR / Path(filename).name).resolve()
+    if not str(safe_path).startswith(str(UPLOAD_DIR)) or not safe_path.exists():
+        raise HTTPException(status_code=404, detail="原图不存在或已清理")
+    return FileResponse(safe_path)
+
+
+# =========================
+# 3. 真题库与可视化采分点 CRUD
+# =========================
+
+@router.get("/questions", dependencies=[Depends(verify_admin)])
+async def admin_list_questions(
+    exam_type: Optional[str] = Query(default=None),
+    region: Optional[str] = Query(default=None),
+    has_points: Optional[str] = Query(default=None, description="yes / no"),
+    keyword: Optional[str] = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(QuestionModel).where(~QuestionModel.question_id.startswith("CUSTOM_"))
+    if exam_type:
+        stmt = stmt.where(QuestionModel.exam_type == exam_type)
+    if region:
+        r_like = f"%{region.strip()}%"
+        stmt = stmt.where(or_(QuestionModel.paper.ilike(r_like), QuestionModel.title.ilike(r_like)))
+    if keyword:
+        k_like = f"%{keyword.strip()}%"
+        stmt = stmt.where(
+            or_(
+                QuestionModel.question_id.ilike(k_like),
+                QuestionModel.title.ilike(k_like),
+                QuestionModel.prompt.ilike(k_like),
+            )
+        )
+
+    rows = (await db.execute(stmt.order_by(desc(QuestionModel.year), desc(QuestionModel.question_id)))).scalars().all()
+    if has_points == "yes":
+        rows = [q for q in rows if q.scoring_points and len(q.scoring_points) > 0]
+    elif has_points == "no":
+        rows = [q for q in rows if not q.scoring_points or len(q.scoring_points) == 0]
+
+    total = len(rows)
+    sliced = rows[(page - 1) * page_size : page * page_size]
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "items": [
+            {
+                "question_id": q.question_id,
+                "exam_type": q.exam_type,
+                "title": q.title,
+                "year": q.year,
+                "paper": q.paper,
+                "sub_type": q.sub_type,
+                "full_score": q.full_score,
+                "min_words": q.min_words,
+                "max_words": q.max_words,
+                "material_len": len(q.material_summary or ""),
+                "scoring_point_count": len(q.scoring_points or []),
+                "has_reference": bool((q.reference_answer or "").strip()),
+            }
+            for q in sliced
+        ],
+    }
+
+
+@router.get("/questions/{question_id}", dependencies=[Depends(verify_admin)])
+async def admin_get_question(question_id: str, db: AsyncSession = Depends(get_db)):
+    q = await db.get(QuestionModel, question_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="真题不存在")
+    return {
+        "question_id": q.question_id,
+        "exam_type": q.exam_type,
+        "title": q.title,
+        "year": q.year,
+        "paper": q.paper,
+        "sub_type": q.sub_type,
+        "prompt": q.prompt,
+        "material_summary": q.material_summary or "",
+        "full_score": q.full_score,
+        "min_words": q.min_words,
+        "max_words": q.max_words,
+        "scoring_points": q.scoring_points or [],
+        "reference_answer": q.reference_answer or "",
+    }
+
+
+class QuestionUpsertReq(BaseModel):
+    question_id: Optional[str] = None
+    exam_type: str = "shenlun_short"
+    title: str = Field(..., min_length=2)
+    year: int = 2026
+    paper: str = ""
+    sub_type: str = "单一题（归纳概括）"
+    prompt: str = Field(..., min_length=5)
+    material_summary: str = ""
+    full_score: float = 15.0
+    min_words: int = 0
+    max_words: int = 300
+    scoring_points: list[dict[str, Any]] = Field(default_factory=list)
+    reference_answer: str = ""
+
+
+@router.post("/questions", dependencies=[Depends(verify_admin)])
+async def admin_create_question(req: QuestionUpsertReq, db: AsyncSession = Depends(get_db)):
+    qid = (req.question_id or "").strip() or f"MAN-{req.year}-{secrets.token_hex(3).upper()}"
+    if await db.get(QuestionModel, qid):
+        raise HTTPException(status_code=400, detail=f"真题 ID {qid} 已存在")
+    q = QuestionModel(
+        question_id=qid,
+        exam_type=req.exam_type,
+        title=req.title,
+        year=req.year,
+        paper=req.paper,
+        sub_type=req.sub_type,
+        prompt=req.prompt,
+        material_summary=req.material_summary,
+        full_score=req.full_score,
+        min_words=req.min_words,
+        max_words=req.max_words,
+        scoring_points=req.scoring_points,
+        reference_answer=req.reference_answer,
+    )
+    db.add(q)
+    await db.commit()
+    return {"ok": True, "question_id": qid}
+
+
+@router.put("/questions/{question_id}", dependencies=[Depends(verify_admin)])
+async def admin_update_question(question_id: str, req: QuestionUpsertReq, db: AsyncSession = Depends(get_db)):
+    q = await db.get(QuestionModel, question_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="真题不存在")
+    q.exam_type = req.exam_type
+    q.title = req.title
+    q.year = req.year
+    q.paper = req.paper
+    q.sub_type = req.sub_type
+    q.prompt = req.prompt
+    q.material_summary = req.material_summary
+    q.full_score = req.full_score
+    q.min_words = req.min_words
+    q.max_words = req.max_words
+    q.scoring_points = req.scoring_points
+    q.reference_answer = req.reference_answer
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/questions/{question_id}", dependencies=[Depends(verify_admin)])
+async def admin_delete_question(question_id: str, db: AsyncSession = Depends(get_db)):
+    q = await db.get(QuestionModel, question_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="真题不存在")
+    await db.delete(q)
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/questions/{question_id}/generate-points", dependencies=[Depends(verify_admin)])
+async def admin_generate_points(question_id: str, db: AsyncSession = Depends(get_db)):
+    """后台一键触发大模型基于完整材料为该题生成 v2 标准采分点"""
+    q = await db.get(QuestionModel, question_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="真题不存在")
+    schema_q = Question(
+        question_id=q.question_id,
+        exam_type=ExamType(q.exam_type),
+        title=q.title,
+        year=q.year,
+        paper=q.paper,
+        sub_type=q.sub_type,
+        prompt=q.prompt,
+        material_summary=q.material_summary or "",
+        full_score=q.full_score,
+        min_words=q.min_words,
+        max_words=q.max_words,
+        scoring_points=[ScoringPoint.model_validate(p) for p in (q.scoring_points or [])],
+        reference_answer=q.reference_answer or "",
+    )
+    router_client = LLMRouter()
+    pts, ref_ans, sub_type = await build_grounded_scoring_points(router_client, schema_q)
+    q.scoring_points = [p.model_dump() for p in pts]
+    if ref_ans:
+        q.reference_answer = ref_ans
+    if sub_type:
+        q.sub_type = sub_type
+    await db.commit()
+    return {"ok": True, "scoring_points": q.scoring_points, "reference_answer": q.reference_answer}
+
+
+# =========================
+# 4. 用户管理
+# =========================
+
+@router.get("/users", dependencies=[Depends(verify_admin)])
+async def admin_list_users(
+    keyword: Optional[str] = Query(default=None),
+    vip_only: bool = Query(default=False),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    now = datetime.utcnow()
+    stmt = select(User)
+    cnt_stmt = select(func.count(User.id))
+
+    if keyword:
+        like = f"%{keyword.strip()}%"
+        cond = or_(User.nickname.ilike(like), User.openid.ilike(like))
+        stmt = stmt.where(cond)
+        cnt_stmt = cnt_stmt.where(cond)
+    if vip_only:
+        stmt = stmt.where(User.vip_expire_at > now)
+        cnt_stmt = cnt_stmt.where(User.vip_expire_at > now)
+
+    total = await db.scalar(cnt_stmt) or 0
+    rows = (
+        await db.execute(stmt.order_by(desc(User.created_at)).offset((page - 1) * page_size).limit(page_size))
+    ).scalars().all()
+
+    user_ids = [u.id for u in rows]
+    task_counts: dict[int, int] = {}
+    if user_ids:
+        tc_rows = (
+            await db.execute(
+                select(GradingTask.user_id, func.count(GradingTask.task_id))
+                .where(GradingTask.user_id.in_(user_ids))
+                .group_by(GradingTask.user_id)
+            )
+        ).all()
+        task_counts = {uid: cnt for uid, cnt in tc_rows}
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "items": [
+            {
+                "user_id": u.id,
+                "openid": u.openid,
+                "nickname": u.nickname,
+                "free_quota": u.free_quota,
+                "paid_quota": u.paid_quota,
+                "is_vip": bool(u.vip_expire_at and u.vip_expire_at > now),
+                "vip_expire_at": u.vip_expire_at,
+                "task_count": task_counts.get(u.id, 0),
+                "created_at": u.created_at,
+            }
+            for u in rows
+        ],
+    }
+
+
+class AdjustUserReq(BaseModel):
+    add_quota: int = Field(default=0, ge=-100, le=500)
+    add_vip_days: int = Field(default=0, ge=0, le=365)
+
+
+@router.post("/users/{user_id}/adjust", dependencies=[Depends(verify_admin)])
+async def admin_adjust_user(user_id: int, req: AdjustUserReq, db: AsyncSession = Depends(get_db)):
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if req.add_quota:
+        user.paid_quota = max(0, user.paid_quota + req.add_quota)
+    if req.add_vip_days > 0:
+        now = datetime.utcnow()
+        base = user.vip_expire_at if (user.vip_expire_at and user.vip_expire_at > now) else now
+        user.vip_expire_at = base + timedelta(days=req.add_vip_days)
+    await db.commit()
+    return {"ok": True, "paid_quota": user.paid_quota, "vip_expire_at": user.vip_expire_at}
+
+
+# =========================
+# 5. 兑换码生成、作废与 CSV 导出
+# =========================
+
 class GenCodeReq(BaseModel):
-    count: int = Field(default=5, ge=1, le=100)
+    count: int = Field(default=5, ge=1, le=200)
     add_quota: int = Field(default=5, ge=0, le=500)
     add_vip_days: int = Field(default=0, ge=0, le=365)
     plan_name: str = Field(default="冲刺体验包(5次)", min_length=1, max_length=64)
 
 
-@router.post("/api/admin/codes", dependencies=[Depends(verify_admin)])
+@router.post("/codes", dependencies=[Depends(verify_admin)])
 async def admin_generate_codes(req: GenCodeReq, db: AsyncSession = Depends(get_db)):
     alphabet = string.ascii_uppercase + string.digits
     prefix = "VIP" if req.add_vip_days > 0 else "RP"
@@ -86,10 +544,29 @@ async def admin_generate_codes(req: GenCodeReq, db: AsyncSession = Depends(get_d
     return {"created": created}
 
 
-@router.get("/api/admin/codes", dependencies=[Depends(verify_admin)])
-async def admin_list_codes(db: AsyncSession = Depends(get_db)):
-    rows = (await db.execute(select(RedeemCode).order_by(desc(RedeemCode.created_at)).limit(100))).scalars().all()
+@router.get("/codes", dependencies=[Depends(verify_admin)])
+async def admin_list_codes(
+    status: str = Query(default="all", description="all / unused / used"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=30, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(RedeemCode)
+    cnt_stmt = select(func.count(RedeemCode.code))
+    if status == "unused":
+        stmt = stmt.where(RedeemCode.is_used == 0)
+        cnt_stmt = cnt_stmt.where(RedeemCode.is_used == 0)
+    elif status == "used":
+        stmt = stmt.where(RedeemCode.is_used == 1)
+        cnt_stmt = cnt_stmt.where(RedeemCode.is_used == 1)
+
+    total = await db.scalar(cnt_stmt) or 0
+    rows = (
+        await db.execute(stmt.order_by(desc(RedeemCode.created_at)).offset((page - 1) * page_size).limit(page_size))
+    ).scalars().all()
+
     return {
+        "total": total,
         "items": [
             {
                 "code": r.code,
@@ -102,294 +579,80 @@ async def admin_list_codes(db: AsyncSession = Depends(get_db)):
                 "created_at": r.created_at,
             }
             for r in rows
-        ]
+        ],
     }
 
 
-@router.get("/api/admin/users", dependencies=[Depends(verify_admin)])
-async def admin_list_users(db: AsyncSession = Depends(get_db)):
-    rows = (await db.execute(select(User).order_by(desc(User.created_at)).limit(100))).scalars().all()
-    now = datetime.utcnow()
-    return {
-        "items": [
-            {
-                "user_id": u.id,
-                "openid": u.openid,
-                "nickname": u.nickname,
-                "free_quota": u.free_quota,
-                "paid_quota": u.paid_quota,
-                "is_vip": bool(u.vip_expire_at and u.vip_expire_at > now),
-                "vip_expire_at": u.vip_expire_at,
-                "created_at": u.created_at,
-            }
-            for u in rows
-        ]
-    }
-
-
-class AdjustUserReq(BaseModel):
-    add_quota: int = Field(default=0, ge=-100, le=500)
-    add_vip_days: int = Field(default=0, ge=0, le=365)
-
-
-@router.post("/api/admin/users/{user_id}/adjust", dependencies=[Depends(verify_admin)])
-async def admin_adjust_user(user_id: int, req: AdjustUserReq, db: AsyncSession = Depends(get_db)):
-    user = await db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    if req.add_quota:
-        user.paid_quota = max(0, user.paid_quota + req.add_quota)
-    if req.add_vip_days > 0:
-        now = datetime.utcnow()
-        base = user.vip_expire_at if (user.vip_expire_at and user.vip_expire_at > now) else now
-        user.vip_expire_at = base + timedelta(days=req.add_vip_days)
-    await db.commit()
-    return {"ok": True, "paid_quota": user.paid_quota, "vip_expire_at": user.vip_expire_at}
-
-
-@router.get("/api/admin/tasks", dependencies=[Depends(verify_admin)])
-async def admin_list_tasks(db: AsyncSession = Depends(get_db)):
-    rows = (await db.execute(select(GradingTask).order_by(desc(GradingTask.created_at)).limit(50))).scalars().all()
-    return {
-        "items": [
-            {
-                "task_id": t.task_id,
-                "user_id": t.user_id,
-                "question_id": t.question_id,
-                "question_title": t.question_title,
-                "status": t.status,
-                "final_score": t.final_score,
-                "full_score": t.full_score,
-                "error_message": t.error_message,
-                "created_at": t.created_at,
-            }
-            for t in rows
-        ]
-    }
-
-
-@router.get("/api/admin/questions/{question_id}", dependencies=[Depends(verify_admin)])
-async def admin_get_question(question_id: str, db: AsyncSession = Depends(get_db)):
-    q = await db.get(QuestionModel, question_id)
-    if not q:
-        raise HTTPException(status_code=404, detail="真题不存在")
-    return {
-        "question_id": q.question_id,
-        "title": q.title,
-        "full_score": q.full_score,
-        "scoring_points": q.scoring_points or [],
-        "reference_answer": q.reference_answer or "",
-    }
-
-
-class UpdateQuestionPointsReq(BaseModel):
-    scoring_points: list[dict[str, Any]]
-    reference_answer: str = ""
-
-
-@router.put("/api/admin/questions/{question_id}", dependencies=[Depends(verify_admin)])
-async def admin_update_question(question_id: str, req: UpdateQuestionPointsReq, db: AsyncSession = Depends(get_db)):
-    q = await db.get(QuestionModel, question_id)
-    if not q:
-        raise HTTPException(status_code=404, detail="真题不存在")
-    q.scoring_points = req.scoring_points
-    q.reference_answer = req.reference_answer
+@router.delete("/codes/{code}", dependencies=[Depends(verify_admin)])
+async def admin_delete_code(code: str, db: AsyncSession = Depends(get_db)):
+    row = await db.get(RedeemCode, code)
+    if not row:
+        raise HTTPException(status_code=404, detail="兑换码不存在")
+    if row.is_used:
+        raise HTTPException(status_code=400, detail="已核销的兑换码不可删除")
+    await db.delete(row)
     await db.commit()
     return {"ok": True}
 
 
-ADMIN_HTML = """<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>知行岛申论精批 · 运营后台</title>
-<style>
-  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; margin: 0; background: #f3f4f6; color: #1f2937; }
-  header { background: #1e3a8a; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
-  header h1 { margin: 0; font-size: 18px; }
-  .wrap { max-width: 1120px; margin: 20px auto; padding: 0 16px 60px; }
-  .card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 18px; box-shadow: 0 2px 8px rgba(0,0,0,.04); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .stat { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; }
-  .stat .num { font-size: 26px; font-weight: 800; color: #1d4ed8; }
-  .stat .lbl { font-size: 12px; color: #64748b; margin-top: 4px; }
-  .tabs { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-  .tab { padding: 8px 16px; border-radius: 8px; background: #e5e7eb; cursor: pointer; font-size: 14px; border: 0; }
-  .tab.active { background: #2563eb; color: #fff; font-weight: 600; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { border-bottom: 1px solid #e5e7eb; padding: 10px 8px; text-align: left; }
-  th { background: #f9fafb; color: #4b5563; }
-  input, textarea { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
-  button.primary { background: #2563eb; color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-weight: 600; }
-  button.sm { padding: 4px 10px; font-size: 12px; border-radius: 6px; border: 1px solid #93c5fd; background: #eff6ff; color: #1d4ed8; cursor: pointer; margin-right: 4px; }
-  .badge { padding: 2px 8px; border-radius: 99px; font-size: 12px; }
-  .ok { background: #dcfce7; color: #166534; }
-  .err { background: #fee2e2; color: #991b1b; }
-  .row-form { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
-  .hidden { display: none; }
-</style>
-</head>
-<body>
-<header>
-  <h1>知行岛申论精批 · 运营管理后台</h1>
-  <button id="logoutBtn" class="sm hidden" onclick="logout()">退出登录</button>
-</header>
-<div class="wrap">
-  <div id="loginCard" class="card" style="max-width:420px;margin:60px auto;">
-    <h2 style="margin-top:0;font-size:18px;">管理员登录</h2>
-    <p style="font-size:13px;color:#6b7280;">请输入 .env 中配置的 ADMIN_PASSWORD（本地默认 admin123）</p>
-    <div class="row-form">
-      <input id="pwdInput" type="password" placeholder="管理员密码" style="flex:1;" />
-      <button class="primary" onclick="login()">登录</button>
-    </div>
-    <div id="loginErr" style="color:#dc2626;font-size:13px;"></div>
-  </div>
-
-  <div id="mainApp" class="hidden">
-    <div class="card">
-      <div class="grid" id="statsGrid"></div>
-    </div>
-
-    <div class="tabs">
-      <button class="tab active" onclick="switchTab('codes', this)">🎁 兑换码发卡</button>
-      <button class="tab" onclick="switchTab('users', this)">👥 用户与补次</button>
-      <button class="tab" onclick="switchTab('tasks', this)">📝 批改监控</button>
-      <button class="tab" onclick="switchTab('questions', this)">📚 采分点微调</button>
-    </div>
-
-    <div id="tab-codes" class="card">
-      <div class="row-form">
-        <input id="cName" value="冲刺体验包(5次)" placeholder="套餐名" />
-        <input id="cCount" type="number" value="5" style="width:70px;" /> 个
-        <input id="cQuota" type="number" value="5" style="width:70px;" /> 次
-        <input id="cVip" type="number" value="0" style="width:70px;" /> 天月卡
-        <button class="primary" onclick="genCodes()">一键生成</button>
-      </div>
-      <div id="newCodesBox" style="background:#f0fdf4;padding:12px;border-radius:8px;margin-bottom:12px;display:none;white-space:pre-wrap;font-family:monospace;"></div>
-      <table><thead><tr><th>兑换码</th><th>套餐</th><th>额度</th><th>状态</th><th>使用用户</th></tr></thead><tbody id="codesBody"></tbody></table>
-    </div>
-
-    <div id="tab-users" class="card hidden">
-      <table><thead><tr><th>ID</th><th>昵称</th><th>免费余次</th><th>付费余次</th><th>月卡</th><th>售后操作</th></tr></thead><tbody id="usersBody"></tbody></table>
-    </div>
-
-    <div id="tab-tasks" class="card hidden">
-      <table><thead><tr><th>任务ID</th><th>用户</th><th>题目</th><th>状态</th><th>得分</th><th>错误信息</th></tr></thead><tbody id="tasksBody"></tbody></table>
-    </div>
-
-    <div id="tab-questions" class="card hidden">
-      <div class="row-form">
-        <input id="qIdInput" placeholder="输入真题ID，如 GK-2026-zf-S04" style="width:260px;" />
-        <button class="primary" onclick="loadQuestion()">查询真题</button>
-      </div>
-      <div id="qEditor" class="hidden">
-        <h3 id="qTitle" style="margin:8px 0;"></h3>
-        <div style="font-size:13px;color:#4b5563;margin-bottom:6px;">标准采分点 JSON（可增删改分值与关键词）：</div>
-        <textarea id="qPoints" style="width:100%;height:240px;font-family:monospace;box-sizing:border-box;"></textarea>
-        <div style="font-size:13px;color:#4b5563;margin:10px 0 6px;">参考答案 / 立意解析：</div>
-        <textarea id="qRef" style="width:100%;height:140px;box-sizing:border-box;"></textarea>
-        <div style="margin-top:12px;"><button class="primary" onclick="saveQuestion()">保存并立即生效</button></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-let PWD = sessionStorage.getItem('admin_pwd') || '';
-async function api(url, opts={}) {
-  const res = await fetch(url, {
-    ...opts,
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Password': PWD, ...(opts.headers||{}) }
-  });
-  if (!res.ok) { const d = await res.json().catch(()=>({})); throw new Error(d.detail || res.status); }
-  return res.json();
-}
-async function login() {
-  PWD = document.getElementById('pwdInput').value.trim();
-  try {
-    await refreshAll();
-    sessionStorage.setItem('admin_pwd', PWD);
-    document.getElementById('loginCard').classList.add('hidden');
-    document.getElementById('mainApp').classList.remove('hidden');
-    document.getElementById('logoutBtn').classList.remove('hidden');
-  } catch (e) { document.getElementById('loginErr').textContent = '登录失败：' + e.message; }
-}
-function logout() { sessionStorage.removeItem('admin_pwd'); location.reload(); }
-function switchTab(name, el) {
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  el.classList.add('active');
-  ['codes','users','tasks','questions'].forEach(k => document.getElementById('tab-'+k).classList.toggle('hidden', k!==name));
-}
-async function refreshAll() {
-  const s = await api('/api/admin/stats');
-  document.getElementById('statsGrid').innerHTML = [
-    ['总用户数', s.total_users], ['今日批改', s.today_tasks], ['累计批改', s.total_tasks],
-    ['失败任务', s.failed_tasks], ['题库总数', s.total_questions], ['未核销码', s.unused_codes], ['已核销码', s.used_codes]
-  ].map(([l,n]) => `<div class="stat"><div class="num">${n}</div><div class="lbl">${l}</div></div>`).join('');
-
-  const c = await api('/api/admin/codes');
-  document.getElementById('codesBody').innerHTML = c.items.map(r => `<tr>
-    <td><b>${r.code}</b></td><td>${r.plan_name}</td><td>+${r.add_quota}次 / +${r.add_vip_days}天</td>
-    <td><span class="badge ${r.is_used?'err':'ok'}">${r.is_used?'已核销':'可用'}</span></td>
-    <td>${r.used_by_user_id || '-'}</td></tr>`).join('');
-
-  const u = await api('/api/admin/users');
-  document.getElementById('usersBody').innerHTML = u.items.map(r => `<tr>
-    <td>${r.user_id}</td><td>${r.nickname}</td><td>${r.free_quota}</td><td>${r.paid_quota}</td>
-    <td>${r.is_vip ? '生效中' : '-'}</td>
-    <td><button class="sm" onclick="adjustUser(${r.user_id},5,0)">+5次</button>
-    <button class="sm" onclick="adjustUser(${r.user_id},0,30)">+30天月卡</button></td></tr>`).join('');
-
-  const t = await api('/api/admin/tasks');
-  document.getElementById('tasksBody').innerHTML = t.items.map(r => `<tr>
-    <td>${r.task_id}</td><td>${r.user_id}</td><td>${r.question_title}</td>
-    <td><span class="badge ${r.status==='failed'?'err':'ok'}">${r.status}</span></td>
-    <td>${r.final_score ?? '-'} / ${r.full_score ?? '-'}</td>
-    <td style="color:#dc2626;max-width:260px;word-break:break-all;">${r.error_message || ''}</td></tr>`).join('');
-}
-async function genCodes() {
-  const res = await api('/api/admin/codes', { method: 'POST', body: JSON.stringify({
-    plan_name: document.getElementById('cName').value,
-    count: Number(document.getElementById('cCount').value),
-    add_quota: Number(document.getElementById('cQuota').value),
-    add_vip_days: Number(document.getElementById('cVip').value),
-  })});
-  const box = document.getElementById('newCodesBox');
-  box.style.display = 'block';
-  box.textContent = '新生成的兑换码（可直接复制发货）：\\n' + res.created.join('\\n');
-  refreshAll();
-}
-async function adjustUser(uid, q, v) {
-  await api(`/api/admin/users/${uid}/adjust`, { method: 'POST', body: JSON.stringify({ add_quota: q, add_vip_days: v }) });
-  alert('已更新用户额度！');
-  refreshAll();
-}
-let currentQid = '';
-async function loadQuestion() {
-  const qid = document.getElementById('qIdInput').value.trim();
-  if (!qid) return;
-  const q = await api('/api/admin/questions/' + encodeURIComponent(qid));
-  currentQid = q.question_id;
-  document.getElementById('qTitle').textContent = `${q.question_id} · ${q.title} (满分 ${q.full_score})`;
-  document.getElementById('qPoints').value = JSON.stringify(q.scoring_points, null, 2);
-  document.getElementById('qRef').value = q.reference_answer || '';
-  document.getElementById('qEditor').classList.remove('hidden');
-}
-async function saveQuestion() {
-  const pts = JSON.parse(document.getElementById('qPoints').value);
-  await api('/api/admin/questions/' + encodeURIComponent(currentQid), {
-    method: 'PUT', body: JSON.stringify({ scoring_points: pts, reference_answer: document.getElementById('qRef').value })
-  });
-  alert('采分点已保存并立即生效！');
-}
-if (PWD) { document.getElementById('pwdInput').value = PWD; login(); }
-</script>
-</body>
-</html>"""
+@router.get("/codes/export", dependencies=[Depends(verify_admin)])
+async def admin_export_unused_codes(db: AsyncSession = Depends(get_db)):
+    """一键导出所有未使用卡密为 CSV（可直接导入小红书/淘宝自动发货）"""
+    rows = (
+        await db.execute(select(RedeemCode).where(RedeemCode.is_used == 0).order_by(desc(RedeemCode.created_at)))
+    ).scalars().all()
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["兑换码", "套餐名称", "精批次数", "月卡天数", "创建时间"])
+    for r in rows:
+        writer.writerow([r.code, r.plan_name, r.add_quota, r.add_vip_days, r.created_at.strftime("%Y-%m-%d %H:%M")])
+    csv_bytes = ("\ufeff" + buf.getvalue()).encode("utf-8")
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=zhixingdao_codes.csv"},
+    )
 
 
-@router.get("/admin", response_class=HTMLResponse)
-async def admin_page():
-    """运营管理后台单页应用"""
-    return HTMLResponse(content=ADMIN_HTML)
+# =========================
+# 6. 系统状态与大模型连通性自检
+# =========================
+
+def _mask_key(key: str) -> str:
+    if not key or key.startswith("sk-your-"):
+        return "未配置"
+    return f"{key[:6]}...{key[-4:]}" if len(key) > 10 else "已配置"
+
+
+@router.get("/system", dependencies=[Depends(verify_admin)])
+async def admin_system_info():
+    db_type = "PostgreSQL" if "postgresql" in settings.database_url else "SQLite (本地)"
+    return {
+        "llm_model": settings.llm_model,
+        "llm_base_url": settings.llm_base_url,
+        "llm_key_masked": _mask_key(settings.llm_api_key),
+        "vlm_model": settings.vlm_model,
+        "vlm_base_url": settings.effective_vlm_base_url,
+        "vlm_key_masked": _mask_key(settings.effective_vlm_api_key),
+        "database_type": db_type,
+        "mock_fallback_enabled": settings.enable_mock_fallback,
+        "wx_appid_configured": bool(settings.wx_appid and settings.wx_secret),
+    }
+
+
+@router.post("/system/ping-llm", dependencies=[Depends(verify_admin)])
+async def admin_ping_llm():
+    if not settings.llm_api_key or settings.llm_api_key.startswith("sk-your-"):
+        return {"ok": False, "detail": "未配置 LLM_API_KEY"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{settings.llm_base_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {settings.llm_api_key}"},
+                json={"model": settings.llm_model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 5},
+            )
+        if r.status_code == 200:
+            return {"ok": True, "detail": f"{settings.llm_model} 连接正常、余额充足！"}
+        return {"ok": False, "detail": f"HTTP {r.status_code}: {r.text[:200]}"}
+    except Exception as e:
+        return {"ok": False, "detail": str(e)}
