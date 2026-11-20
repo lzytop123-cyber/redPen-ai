@@ -1,4 +1,5 @@
 import asyncio
+import re
 import uuid
 from collections import Counter
 from datetime import datetime
@@ -120,6 +121,32 @@ def _to_question_schema(q: QuestionModel) -> Question:
     )
 
 
+def _attach_material_evidence(report: dict, question: Question) -> None:
+    points = {p.point_id: p for p in question.scoring_points}
+    material = question.material_summary
+    headings = list(re.finditer(
+        r"^[ \t　]*((?:给定)?(?:材料|资料)[ \t　]*[0-9一二三四五六七八九十]+)(?=[：:、\s]|$)",
+        material, re.MULTILINE,
+    ))
+    for match in (report.get("shenlun_detail") or {}).get("point_matches", []):
+        point = points.get(match["point_id"])
+        if not point:
+            continue
+        match["keyword"] = point.keyword
+        # Older scoring points have no stored quotation. Only show a literal
+        # passage if their description or keyword actually occurs in the material.
+        candidates = [point.material_quote, *re.split(r"[，。；、/]", point.description), point.keyword]
+        for candidate in candidates:
+            phrase = candidate.strip()
+            position = material.find(phrase)
+            if len(phrase) >= 4 and position >= 0:
+                match["material_quote"] = phrase
+                section = next((h for h in reversed(headings) if h.start() <= position), None)
+                if section and material.find(phrase, position + len(phrase)) == -1:
+                    match["material_section"] = section[1]
+                break
+
+
 async def _execute_grading_task(task_id: str, question: Question, student_answer: str) -> None:
     """后台异步执行 3 步精批管线（后续高并发时可直接迁移至 Redis + ARQ Worker）"""
     use_mock = (not settings.llm_api_key or settings.llm_api_key.startswith("sk-your-")) and settings.enable_mock_fallback
@@ -154,7 +181,9 @@ async def _execute_grading_task(task_id: str, question: Question, student_answer
                 t.full_score = report.full_score
                 t.band_label = report.band_label
                 t.weakness_tags = report.weakness_tags
-                t.report_json = report.model_dump()
+                payload = report.model_dump()
+                _attach_material_evidence(payload, question)
+                t.report_json = payload
                 t.finished_at = datetime.utcnow()
                 await session.commit()
     except Exception as e:

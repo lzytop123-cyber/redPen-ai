@@ -1,6 +1,31 @@
 import re
 
 
+def english_word_limits(prompt: str, minimum: int, maximum: int) -> tuple[int, int, str]:
+    """Read the writing instruction even for questions imported with older scoring limits."""
+    span = re.search(r"\b(\d+)\s*[-–—~～]\s*(\d+)\s+words?\b", prompt, re.I)
+    if span:
+        low, high = map(int, span.groups())
+        if low <= high:
+            return low, high, f"{low}～{high} 词"
+    about = re.search(r"\b(?:about|around|approximately)\s+(\d+)\s+words?\b", prompt, re.I)
+    if about:
+        target = int(about[1])
+        # A default for another essay length gives no basis for a penalty.
+        if minimum > target or (maximum and maximum < target):
+            minimum, maximum = 0, 0
+        return minimum, maximum, f"约 {target} 词"
+    if minimum and maximum:
+        label = f"{minimum}～{maximum} 词"
+    elif minimum:
+        label = f"不少于 {minimum} 词"
+    elif maximum:
+        label = f"不超过 {maximum} 词"
+    else:
+        label = ""
+    return minimum, maximum, label
+
+
 def short_answer_limits(prompt: str, minimum: int, maximum: int) -> tuple[int, int]:
     """优先使用题干明确给出的字数上下限，兼容已入库的旧题。"""
     span = re.search(r"(\d+)\s*字?\s*[~～—–－至到-]\s*(\d+)\s*字", prompt)

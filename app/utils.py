@@ -23,6 +23,12 @@ def count_words(text: str, exam_type: ExamType) -> int:
 
 
 def check_word_count_warning(word_count: int, question: Question) -> Optional[str]:
+    if question.exam_type == ExamType.KAOYAN_ENGLISH:
+        if question.max_words and word_count > question.max_words:
+            return f"当前 {word_count} 词，比参考上限多 {word_count - question.max_words} 词。"
+        if question.min_words and word_count < question.min_words:
+            return f"当前 {word_count} 词，比参考下限少 {question.min_words - word_count} 词。"
+        return None
     if question.max_words and word_count > question.max_words:
         over = word_count - question.max_words
         return f"超出字数上限 {over} 字（当前 {word_count} / 上限 {question.max_words}），考场可能触发扣分！"

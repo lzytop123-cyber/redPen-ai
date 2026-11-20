@@ -104,6 +104,7 @@ async def build_grounded_scoring_points(
             keyword=p.keyword,
             description=p.description,
             score=s,
+            material_quote=p.material_quote if p.material_quote and p.material_quote in material else "",
         )
         for i, (p, s) in enumerate(zip(drafts, scores), start=1)
     ]

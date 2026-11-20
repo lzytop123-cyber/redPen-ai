@@ -2,25 +2,25 @@
   <view class="page">
     <!-- 顶部品牌栏 -->
     <view class="header">
-      <view class="title">AI 阅卷级主观题精批</view>
+      <view class="title">知行岛申论精批</view>
       <view class="subtitle">覆盖全国 31 省市历年国考/省考申论与考研英语真题</view>
       <view class="search-box">
         <input
           v-model="keyword"
           class="search-input"
-          placeholder="搜索年份/省份/题目关键词（如 2025 山西）"
+          placeholder="搜索年份、试卷或题目关键词"
           confirm-type="search"
-          @confirm="fetchQuestions"
+          @confirm="search"
         />
-        <text class="search-btn" @click="fetchQuestions">搜索</text>
+        <text class="search-btn" @click="search">搜索</text>
       </view>
     </view>
 
     <!-- 醒目的任意题目自由批改大入口 -->
     <view class="quick-entry" @click="goCustomSubmit">
       <view class="quick-left">
-        <view class="quick-title">📷 任意题目拍照直批</view>
-        <view class="quick-desc">模拟卷 / 机构押题 / 随手练笔，无需找题直接批改</view>
+        <view class="quick-title">{{ examLabel }}拍照批改</view>
+        <view class="quick-desc">练习题不在题库？拍下题目和作答即可批改</view>
       </view>
       <view class="quick-btn">去批改 →</view>
     </view>
@@ -90,9 +90,10 @@
 
     <!-- 真题列表 -->
     <view class="list">
-      <view class="result-count">共匹配 {{ totalCount }} 道真题</view>
+      <view v-if="!loading && !loadError" class="result-count">共匹配 {{ totalCount }} 道真题</view>
       <view v-if="loading" class="empty">加载真题库中...</view>
-      <view v-else-if="questions.length === 0" class="empty">暂无匹配真题，可点击上方「任意题目拍照直批」</view>
+      <view v-else-if="loadError && questions.length === 0" class="empty" @click="fetchQuestions()">真题加载失败，点此重试</view>
+      <view v-else-if="questions.length === 0" class="empty">暂无匹配真题，可调整筛选或使用上方的拍照批改</view>
       <view
         v-for="q in questions"
         :key="q.question_id"
@@ -100,17 +101,20 @@
         @click="goSubmit(q.question_id)"
       >
         <view class="card-top">
-          <text class="tag">{{ q.sub_type || q.exam_type }}</text>
+          <view class="card-tags">
+            <text class="tag">{{ q.sub_type || examLabel }}</text>
+            <text v-if="q.hasDraft" class="draft-tag">继续草稿</text>
+          </view>
           <text class="score">满分 {{ q.full_score }} 分</text>
         </view>
         <view class="card-title">{{ q.title }}</view>
         <view class="card-meta">
-          <text v-if="q.min_words || q.max_words">字数要求：{{ formatWordLimits(q.min_words, q.max_words) }}</text>
-          <text v-if="q.scoring_point_count > 0"> ｜ 含 {{ q.scoring_point_count }} 个标准采分点</text>
-          <text v-else> ｜ 结合给定材料评阅</text>
+          <text v-if="q.word_requirement">{{ q.word_requirement }}</text>
+          <text v-if="q.exam_type === 'shenlun_short' && q.scoring_point_count > 0">{{ q.scoring_point_count }} 个采分点</text>
         </view>
       </view>
       <view v-if="loadingMore" class="load-more">加载更多真题中...</view>
+      <view v-else-if="loadError && questions.length > 0" class="load-more" @click="fetchQuestions(false)">加载失败，点此重试</view>
       <view v-else-if="questions.length > 0 && questions.length >= totalCount" class="load-more">
         — 已展示全部 {{ totalCount }} 道真题 —
       </view>
@@ -119,8 +123,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { onReachBottom } from "@dcloudio/uni-app";
+import { computed, ref } from "vue";
+import { onLoad, onReachBottom, onShow } from "@dcloudio/uni-app";
+import { hasDraft } from "@/utils/drafts";
 import { formatWordLimits } from "@/utils/wordLimits";
 import { request } from "@/utils/request";
 
@@ -130,6 +135,7 @@ interface QuestionItem {
   title: string;
   sub_type: string;
   full_score: number;
+  word_requirement: string;
   min_words: number;
   max_words: number;
   scoring_point_count: number;
@@ -155,14 +161,22 @@ async function fetchRegions() {
     const res = await request<{ items: Array<{ label: string; value: string; count: number }> }>({
       url: "/api/questions/regions",
     });
-    if (res.items && res.items.length > 0) {
+    if (Array.isArray(res.items)) {
       regions.value = [
         { label: "全部", value: "" },
         ...res.items.map((r) => ({ label: r.label, value: r.value })),
       ];
+      if (activeRegion.value && !regions.value.some((r) => r.value === activeRegion.value)) {
+        activeRegion.value = "";
+        saveFilters();
+        if (activeType.value !== "kaoyan_english") fetchQuestions();
+      }
     }
   } catch {
-    // 兜底保留默认列表
+    // 离线时仍显示上次从地区列表中选中的省份。
+    if (activeRegion.value && !regions.value.some((r) => r.value === activeRegion.value)) {
+      regions.value.push({ label: activeRegion.value, value: activeRegion.value });
+    }
   }
 }
 
@@ -183,49 +197,104 @@ const kaoyanSubTypes = [
 ];
 
 const activeType = ref("shenlun_short");
+const examLabel = computed(() => tabs.find((tab) => tab.value === activeType.value)!.label);
 const activeRegion = ref("");
-const activeSubType = ref("");
+const shortSubType = ref("");
+const englishSubType = ref("");
+const activeSubType = computed(() => {
+  if (activeType.value === "kaoyan_english") return englishSubType.value;
+  if (activeType.value === "shenlun_short") return shortSubType.value;
+  return "";
+});
 const keyword = ref("");
+const appliedKeyword = ref("");
+const filterStorageKey = "ai_grading_question_filters";
+
+function restoreFilters() {
+  try {
+    const saved = uni.getStorageSync(filterStorageKey);
+    if (!saved || typeof saved !== "object") return;
+    if (tabs.some((tab) => tab.value === saved.examType)) activeType.value = saved.examType;
+    if (typeof saved.region === "string") activeRegion.value = saved.region;
+    if (subTypes.some((s) => s.value === saved.shortSubType)) shortSubType.value = saved.shortSubType;
+    if (kaoyanSubTypes.some((s) => s.value === saved.englishSubType)) englishSubType.value = saved.englishSubType;
+    if (typeof saved.keyword === "string") keyword.value = appliedKeyword.value = saved.keyword;
+  } catch {
+    // 存储不可用时使用默认筛选。
+  }
+}
+
+function saveFilters() {
+  try {
+    uni.setStorageSync(filterStorageKey, {
+      examType: activeType.value,
+      region: activeRegion.value,
+      shortSubType: shortSubType.value,
+      englishSubType: englishSubType.value,
+      keyword: appliedKeyword.value,
+    });
+  } catch {
+    // 存储不可用时，本次筛选仍然生效。
+  }
+}
+
 const loading = ref(false);
 const loadingMore = ref(false);
+const loadError = ref(false);
 const page = ref(1);
 const pageSize = 20;
 const totalCount = ref(0);
-const questions = ref<QuestionItem[]>([]);
+const questions = ref<Array<QuestionItem & { hasDraft: boolean }>>([]);
+let requestVersion = 0;
 
 async function fetchQuestions(reset = true) {
   if (reset) {
-    page.value = 1;
+    requestVersion += 1;
+    questions.value = [];
+    totalCount.value = 0;
     loading.value = true;
+    loadingMore.value = false;
   } else {
-    if (loadingMore.value || questions.value.length >= totalCount.value) return;
-    page.value += 1;
+    if (loading.value || loadingMore.value || questions.value.length >= totalCount.value) return;
     loadingMore.value = true;
   }
+  const version = requestVersion;
+  const nextPage = reset ? 1 : page.value + 1;
+  loadError.value = false;
   try {
     const params = [
       `exam_type=${encodeURIComponent(activeType.value)}`,
-      `page=${page.value}`,
+      `page=${nextPage}`,
       `page_size=${pageSize}`,
     ];
     if (activeType.value !== "kaoyan_english" && activeRegion.value) {
       params.push(`region=${encodeURIComponent(activeRegion.value)}`);
     }
-    if ((activeType.value === "shenlun_short" || activeType.value === "kaoyan_english") && activeSubType.value) {
+    if (activeSubType.value) {
       params.push(`sub_type=${encodeURIComponent(activeSubType.value)}`);
     }
-    if (keyword.value.trim()) {
-      params.push(`keyword=${encodeURIComponent(keyword.value.trim())}`);
+    if (appliedKeyword.value) {
+      params.push(`keyword=${encodeURIComponent(appliedKeyword.value)}`);
     }
     const res = await request<{ total: number; items: QuestionItem[] }>({
       url: `/api/questions?${params.join("&")}`,
     });
-    totalCount.value = res.total || 0;
-    const incoming = res.items || [];
+    if (version !== requestVersion) return;
+    totalCount.value = res.total;
+    page.value = nextPage;
+    const incoming = res.items.map((q) => ({
+      ...q,
+      word_requirement: q.word_requirement ?? formatWordLimits(q.min_words, q.max_words, q.exam_type),
+      hasDraft: hasDraft(q.question_id),
+    }));
     questions.value = reset ? incoming : [...questions.value, ...incoming];
+  } catch {
+    if (version === requestVersion) loadError.value = true;
   } finally {
-    loading.value = false;
-    loadingMore.value = false;
+    if (version === requestVersion) {
+      loading.value = false;
+      loadingMore.value = false;
+    }
   }
 }
 
@@ -234,18 +303,25 @@ onReachBottom(() => {
 });
 
 function selectTab(val: string) {
+  if (val === activeType.value) return;
   activeType.value = val;
-  activeSubType.value = "";
-  fetchQuestions();
+  search();
 }
 
 function selectRegion(val: string) {
   activeRegion.value = val;
-  fetchQuestions();
+  search();
 }
 
 function selectSubType(val: string) {
-  activeSubType.value = val;
+  if (activeType.value === "kaoyan_english") englishSubType.value = val;
+  else shortSubType.value = val;
+  search();
+}
+
+function search() {
+  appliedKeyword.value = keyword.value.trim();
+  saveFilters();
   fetchQuestions();
 }
 
@@ -254,12 +330,17 @@ function goSubmit(qid: string) {
 }
 
 function goCustomSubmit() {
-  uni.navigateTo({ url: `/pages/submit/submit?mode=custom` });
+  uni.navigateTo({ url: `/pages/submit/submit?mode=custom&examType=${encodeURIComponent(activeType.value)}` });
 }
 
-onMounted(() => {
+onLoad(() => {
+  restoreFilters();
   fetchRegions();
   fetchQuestions();
+});
+
+onShow(() => {
+  for (const q of questions.value) q.hasDraft = hasDraft(q.question_id);
 });
 </script>
 
@@ -413,6 +494,19 @@ onMounted(() => {
   background: #eff6ff;
   color: #1d4ed8;
   font-size: 22rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+}
+.card-tags, .card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+.draft-tag {
+  font-size: 22rpx;
+  color: #166534;
+  background: #dcfce7;
   padding: 4rpx 14rpx;
   border-radius: 8rpx;
 }

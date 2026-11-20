@@ -1,20 +1,33 @@
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
 from app.db.models import QuestionModel
+from app.pdf_exporter import build_question_pdf
 
-from app.word_limits import short_answer_limits
+from app.word_limits import english_word_limits, short_answer_limits
 
 
-def _word_limits(q: QuestionModel) -> dict[str, int]:
+def _word_limits(q: QuestionModel) -> dict[str, int | str]:
     minimum, maximum = q.min_words, q.max_words
+    if q.exam_type == "kaoyan_english":
+        minimum, maximum, label = english_word_limits(q.prompt, minimum, maximum)
+        return {"min_words": minimum, "max_words": maximum, "word_requirement": label}
     if q.exam_type == "shenlun_short":
         minimum, maximum = short_answer_limits(q.prompt, minimum, maximum)
-    return {"min_words": minimum, "max_words": maximum}
+    label = ""
+    if minimum and maximum:
+        label = f"{minimum}～{maximum} 字"
+    elif maximum:
+        label = f"不超过 {maximum} 字"
+    elif minimum:
+        label = f"不少于 {minimum} 字"
+    return {"min_words": minimum, "max_words": maximum, "word_requirement": label}
 
 
 router = APIRouter(prefix="/api/questions", tags=["真题库"])
@@ -136,3 +149,36 @@ async def get_question_detail(question_id: str, db: AsyncSession = Depends(get_d
         **_word_limits(q),
         "scoring_point_count": len(q.scoring_points or []),
     }
+
+
+@router.get("/{question_id}/pdf")
+async def export_question_pdf(question_id: str, db: AsyncSession = Depends(get_db)):
+    """导出单道真题的 A4 宽行距 PDF（支持直接打印或转发至 iPad GoodNotes 勾画）"""
+    q = await db.get(QuestionModel, question_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="真题不存在")
+
+    limits = _word_limits(q)
+    min_w, max_w = limits["min_words"], limits["max_words"]
+    unit = "词" if q.exam_type == "kaoyan_english" else "字"
+    if min_w and max_w:
+        limit_str = f"字数要求：{min_w}～{max_w} {unit}"
+    elif max_w:
+        limit_str = f"字数要求：不超过 {max_w} {unit}"
+    elif min_w:
+        limit_str = f"字数要求：不少于 {min_w} {unit}"
+    else:
+        limit_str = ""
+
+    pdf_bytes = build_question_pdf(
+        title=q.title,
+        prompt=q.prompt,
+        material=q.material_summary or "",
+        word_limit_text=limit_str,
+    )
+    safe_name = quote(f"{q.question_id}.pdf")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{safe_name}"},
+    )

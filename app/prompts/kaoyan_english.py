@@ -1,4 +1,21 @@
+import json
+from functools import lru_cache
+from pathlib import Path
+
 from app.schemas import KaoyanEnglishStep1Output, NumberedSentence, Question
+
+
+@lru_cache(maxsize=1)
+def _practice_figures() -> dict:
+    path = Path(__file__).resolve().parents[2] / "data" / "practice_figures.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _writing_task(question: Question) -> str:
+    figure = _practice_figures().get(question.question_id)
+    if not figure:
+        return question.prompt
+    return f"{question.prompt}\n【学生看到的练习配图】{figure['caption']}\n以配图所给信息为准。"
 
 
 def build_kaoyan_step1_prompts(question: Question, student_answer: str) -> tuple[str, str]:
@@ -13,7 +30,7 @@ def build_kaoyan_step1_prompts(question: Question, student_answer: str) -> tuple
         "严禁客套夸奖，客观指出所有扣分硬伤。"
     )
     user_prompt = (
-        f"【题目要求】\n{question.prompt}\n\n"
+        f"【题目要求】\n{_writing_task(question)}\n\n"
         f"【考生作文原文】\n{student_answer}\n\n"
         "请严格按上述 4 个维度定档并输出 JSON。"
     )
@@ -35,7 +52,7 @@ def build_kaoyan_step2_prompts(
     )
     sentences_text = "\n".join(f"[{s.sentence_id}] {s.text}" for s in sentences)
     user_prompt = (
-        f"【题目要求】\n{question.prompt}\n\n"
+        f"【题目要求】\n{_writing_task(question)}\n\n"
         f"【考官维度初评】\n{step1.model_dump_json(ensure_ascii=False)}\n\n"
         f"【考生带编号原句】\n{sentences_text}\n\n"
         "请输出 4~8 条最核心的逐句红笔批注 JSON。"
@@ -52,10 +69,10 @@ def build_kaoyan_step3_prompts(
         "你是考研英语高分升格教练。核心原则是【同思路升格】：\n"
         "1. 必须保留考生原本的段落结构和核心论点（不要推倒重写一篇陌生范文）；\n"
         "2. 修正所有语法错误，把平庸词汇和中式表达升级为地道考研高分表达，适当增加非谓语、倒装或定语从句提升句式多样性；\n"
-        "3. 字数控制在 170~200 词之间，确保考生看完能直接吸收背诵。"
+        "3. 升格后的作文遵守本题题干给出的词数要求。"
     )
     user_prompt = (
-        f"【题目要求】\n{question.prompt}\n\n"
+        f"【题目要求】\n{_writing_task(question)}\n\n"
         f"【考生原稿】\n{student_answer}\n\n"
         f"【已识别的问题】\n{step1.model_dump_json(ensure_ascii=False)}\n\n"
         "请输出同思路高分升格版作文及 3~5 条中文核心改动说明 JSON。"

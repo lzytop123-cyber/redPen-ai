@@ -28,7 +28,7 @@
         <view class="hero-left">
           <view class="hero-sub">AI 阅卷级精批报告</view>
           <view class="hero-title">{{ report.question_title }}</view>
-          <view class="hero-meta">统计字数：{{ report.word_count }}</view>
+          <view class="hero-meta">本次作答 {{ report.word_count }} {{ englishReport ? "词" : "字" }}</view>
         </view>
         <view class="hero-right">
           <view class="score-num">{{ report.final_score }}<text class="score-full">/{{ report.full_score }}</text></view>
@@ -36,8 +36,19 @@
         </view>
       </view>
 
-      <view v-if="report.word_count_warning" class="warn-box">
-        ⚠️ {{ report.word_count_warning }}
+      <view class="card advice-card">
+        <view class="advice-label">下一步怎么改</view>
+        <view class="advice-title">{{ advice.title }}</view>
+        <view v-if="advice.cue" class="advice-cue">{{ advice.cue }}</view>
+        <view class="advice-text">{{ advice.text }}</view>
+        <view class="advice-actions">
+          <button v-if="advice.target" class="detail-btn" size="mini" @click="openAdvice">{{ advice.link }}</button>
+          <button v-if="report.question_id" class="rewrite-btn" size="mini" @click="rewrite">重写这道题</button>
+        </view>
+      </view>
+
+      <view v-if="wordWarning" class="warn-box">
+        ⚠️ {{ wordWarning }}
       </view>
 
       <!-- 申论采分点明细 + 命中率可视化条 -->
@@ -54,14 +65,15 @@
           <text class="meter-pct">{{ hitStats.percent }}%</text>
         </view>
 
-        <view v-for="m in report.shenlun_detail.point_matches" :key="m.point_id" class="point-row">
+        <view v-for="(m, idx) in report.shenlun_detail.point_matches" :id="'point-' + idx" :key="m.point_id" class="point-row">
           <view class="point-head">
-            <text class="pid">{{ m.point_id }}</text>
+            <text class="pid">{{ m.point_id }} {{ m.keyword }}</text>
             <text :class="['badge', m.status]">{{ statusLabel[m.status] || m.status }}</text>
           </view>
           <view v-if="m.status !== 'miss' && m.evidence_quote" class="quote-box">
             作答原文：{{ m.evidence_quote }}
           </view>
+          <view v-if="m.material_quote" class="material-cue">{{ m.material_section || "材料原文" }}：{{ m.material_quote }}</view>
           <view class="point-comment">{{ m.comment }}</view>
         </view>
       </view>
@@ -70,7 +82,8 @@
       <view v-if="report.shenlun_essay_detail || report.kaoyan_detail" class="card">
         <view class="card-h">一、官方评分维度定档</view>
         <view
-          v-for="d in (report.shenlun_essay_detail || report.kaoyan_detail).dimensions"
+          v-for="(d, idx) in (report.shenlun_essay_detail || report.kaoyan_detail).dimensions"
+          :id="'dimension-' + idx"
           :key="d.dimension"
           class="point-row"
         >
@@ -92,6 +105,7 @@
         </view>
         <view
           v-for="s in visibleSentences"
+          :id="'sentence-' + s.sentence_id"
           :key="s.sentence_id"
           :class="['sent-box', hasIssue(s.sentence_id) ? 'sent-red' : '']"
         >
@@ -100,7 +114,7 @@
           </view>
           <view v-for="(ann, i) in getAnnotations(s.sentence_id)" :key="i" class="ann-note">
             <text :class="['ann-tag', ann.severity === 'positive' ? 'ann-tag-good' : '']">
-              {{ issueLabel[ann.issue_type] || ann.issue_type }}
+              {{ englishReport && ann.issue_type === 'redundancy' ? '表达冗长' : issueLabel[ann.issue_type] || ann.issue_type }}
             </text>
             <text>{{ ann.comment }}</text>
             <view class="ann-suggest">建议改写：{{ ann.suggestion }}</view>
@@ -109,7 +123,7 @@
       </view>
 
       <!-- 同思路升格范文（带一键复制） -->
-      <view class="card">
+      <view id="upgrade" class="card">
         <view class="card-h-row">
           <view class="card-h">三、同思路高分升格版</view>
           <button class="copy-btn" size="mini" @click="copyUpgraded">📋 一键复制</button>
@@ -125,9 +139,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { onLoad, onUnload } from "@dcloudio/uni-app";
 import { request } from "@/utils/request";
+import { formatReportWarning, selectReportAdvice } from "@/utils/reportAdvice";
 
 const statusLabel: Record<string, string> = { hit: "命中", partial: "部分命中", miss: "未命中" };
 const issueLabel: Record<string, string> = {
@@ -161,6 +176,26 @@ const report = ref<any>(null);
 const onlyIssues = ref(false);
 const tickCount = ref(0);
 let timer: any = null;
+
+const advice = computed(() => selectReportAdvice(report.value || {}));
+const englishReport = computed(() => report.value?.exam_type === "kaoyan_english");
+const wordWarning = computed(() => formatReportWarning(report.value?.word_count_warning, englishReport.value));
+
+async function openAdvice() {
+  const target = advice.value.target;
+  if (!target) return;
+  if (target.startsWith("sentence-") && onlyIssues.value) {
+    onlyIssues.value = false;
+    await nextTick();
+  }
+  uni.pageScrollTo({ selector: `#${target}`, duration: 250 });
+}
+
+function rewrite() {
+  const qid = encodeURIComponent(report.value.question_id);
+  const fromTask = encodeURIComponent(taskId.value);
+  uni.navigateTo({ url: `/pages/submit/submit?qid=${qid}&fromTask=${fromTask}` });
+}
 
 const currentTip = computed(() => writingTips[tickCount.value % writingTips.length]);
 
@@ -357,6 +392,52 @@ onUnload(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16rpx;
+}
+.advice-card {
+  border: 2rpx solid #bfdbfe;
+  line-height: 1.55;
+}
+.advice-label {
+  color: #1d4ed8;
+  font-size: 23rpx;
+  font-weight: 600;
+}
+.advice-title {
+  margin: 8rpx 0;
+  font-size: 31rpx;
+  font-weight: 700;
+}
+.advice-cue, .material-cue {
+  margin: 12rpx 0;
+  padding: 10rpx 16rpx;
+  border-left: 4rpx solid #93c5fd;
+  background: #eff6ff;
+  font-size: 25rpx;
+  color: #334155;
+}
+.advice-text {
+  font-size: 27rpx;
+}
+.advice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-top: 18rpx;
+}
+.advice-actions button {
+  margin: 0;
+  padding: 0 22rpx;
+  line-height: 68rpx;
+  font-size: 25rpx;
+  border-radius: 10rpx;
+}
+.detail-btn {
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+.rewrite-btn {
+  color: #fff;
+  background: #2563eb;
 }
 .card-h {
   font-size: 30rpx;

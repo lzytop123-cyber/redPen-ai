@@ -4,7 +4,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
-from app.word_limits import short_answer_limits
+from app.word_limits import english_word_limits, short_answer_limits
 
 
 def _normalize_quote_text(text: str) -> str:
@@ -29,6 +29,7 @@ class ScoringPoint(BaseModel):
     keyword: str = Field(..., description="核心关键词/规范表述")
     description: str = Field(..., description="采分点完整说明及同义表达")
     score: float = Field(..., description="该采分点分值")
+    material_quote: str = Field(default="", description="已核对的给定材料原文")
 
 
 class Question(BaseModel):
@@ -50,6 +51,10 @@ class Question(BaseModel):
 
     @model_validator(mode="after")
     def apply_written_limits(self):
+        if self.exam_type == ExamType.KAOYAN_ENGLISH:
+            self.min_words, self.max_words, _ = english_word_limits(
+                self.prompt, self.min_words, self.max_words
+            )
         if self.exam_type == ExamType.SHENLUN_SHORT:
             self.min_words, self.max_words = short_answer_limits(
                 self.prompt, self.min_words, self.max_words
