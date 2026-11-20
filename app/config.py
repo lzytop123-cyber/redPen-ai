@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     wx_appid: str = ""
     wx_secret: str = ""
     jwt_secret: str = "dev-secret-change-in-prod"
+    admin_password: str = "admin123"
 
     # Local dev helper: fallback to mock grading if API key not set
     enable_mock_fallback: bool = True
