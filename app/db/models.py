@@ -68,3 +68,17 @@ class GradingTask(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class RedeemCode(Base):
+    """兑换码表（支持按次包/月卡激活，规避 iOS 虚拟支付审核限制，适合自习室与小红书售卖）"""
+    __tablename__ = "redeem_codes"
+
+    code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    plan_name: Mapped[str] = mapped_column(String(64), default="冲刺体验包")
+    add_quota: Mapped[int] = mapped_column(Integer, default=0)      # 增加的按次精批额度
+    add_vip_days: Mapped[int] = mapped_column(Integer, default=0)   # 增加的月卡天数
+    is_used: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    used_by_user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

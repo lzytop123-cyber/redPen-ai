@@ -110,12 +110,17 @@
           <text v-else> ｜ 结合给定材料评阅</text>
         </view>
       </view>
+      <view v-if="loadingMore" class="load-more">加载更多真题中...</view>
+      <view v-else-if="questions.length > 0 && questions.length >= totalCount" class="load-more">
+        — 已展示全部 {{ totalCount }} 道真题 —
+      </view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { onReachBottom } from "@dcloudio/uni-app";
 import { formatWordLimits } from "@/utils/wordLimits";
 import { request } from "@/utils/request";
 
@@ -182,15 +187,26 @@ const activeRegion = ref("");
 const activeSubType = ref("");
 const keyword = ref("");
 const loading = ref(false);
+const loadingMore = ref(false);
+const page = ref(1);
+const pageSize = 20;
 const totalCount = ref(0);
 const questions = ref<QuestionItem[]>([]);
 
-async function fetchQuestions() {
-  loading.value = true;
+async function fetchQuestions(reset = true) {
+  if (reset) {
+    page.value = 1;
+    loading.value = true;
+  } else {
+    if (loadingMore.value || questions.value.length >= totalCount.value) return;
+    page.value += 1;
+    loadingMore.value = true;
+  }
   try {
     const params = [
       `exam_type=${encodeURIComponent(activeType.value)}`,
-      `page_size=40`,
+      `page=${page.value}`,
+      `page_size=${pageSize}`,
     ];
     if (activeType.value !== "kaoyan_english" && activeRegion.value) {
       params.push(`region=${encodeURIComponent(activeRegion.value)}`);
@@ -205,11 +221,17 @@ async function fetchQuestions() {
       url: `/api/questions?${params.join("&")}`,
     });
     totalCount.value = res.total || 0;
-    questions.value = res.items || [];
+    const incoming = res.items || [];
+    questions.value = reset ? incoming : [...questions.value, ...incoming];
   } finally {
     loading.value = false;
+    loadingMore.value = false;
   }
 }
+
+onReachBottom(() => {
+  fetchQuestions(false);
+});
 
 function selectTab(val: string) {
   activeType.value = val;
@@ -413,5 +435,11 @@ onMounted(() => {
   text-align: center;
   color: #9ca3af;
   padding: 80rpx 0;
+}
+.load-more {
+  text-align: center;
+  color: #9ca3af;
+  font-size: 24rpx;
+  padding: 20rpx 0 40rpx;
 }
 </style>

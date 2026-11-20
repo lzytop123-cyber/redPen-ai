@@ -1,16 +1,16 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth_utils import create_access_token, get_current_user
 from app.config import settings
 from app.db.database import get_db
-from app.db.models import User
+from app.db.models import RedeemCode, User
 
 router = APIRouter(prefix="/api/auth", tags=["认证与用户"])
 
@@ -87,3 +87,40 @@ async def wx_login(req: WxLoginReq, db: AsyncSession = Depends(get_db)):
 async def get_me(user: User = Depends(get_current_user)):
     """获取当前用户精批额度与会员状态"""
     return _to_user_resp(user)
+
+
+class RedeemReq(BaseModel):
+    code: str = Field(..., min_length=4, max_length=32, description="激活兑换码")
+
+
+@router.post("/redeem")
+async def redeem_code(
+    req: RedeemReq,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """核销兑换码：自动发放按次精批额度或延长上岸月卡天数"""
+    normalized = req.code.strip().upper()
+    row = await db.get(RedeemCode, normalized)
+    if not row:
+        raise HTTPException(status_code=404, detail="兑换码不存在，请核对后重试")
+    if row.is_used:
+        raise HTTPException(status_code=400, detail="该兑换码已被使用")
+
+    now = datetime.utcnow()
+    if row.add_quota > 0:
+        user.paid_quota += row.add_quota
+    if row.add_vip_days > 0:
+        base = user.vip_expire_at if (user.vip_expire_at and user.vip_expire_at > now) else now
+        user.vip_expire_at = base + timedelta(days=row.add_vip_days)
+
+    row.is_used = 1
+    row.used_by_user_id = user.id
+    row.used_at = now
+    await db.commit()
+    await db.refresh(user)
+
+    return {
+        "message": f"兑换成功！已到账【{row.plan_name}】",
+        "user": _to_user_resp(user),
+    }
