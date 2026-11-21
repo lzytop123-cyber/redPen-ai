@@ -380,6 +380,7 @@ async def submit_custom_grading(
         ExamType.SHENLUN_SHORT: (15.0, 120, 300),
         ExamType.SHENLUN_ESSAY: (40.0, 1000, 1200),
         ExamType.KAOYAN_ENGLISH: (20.0, 160, 220),
+        ExamType.KAOYAN_396: (20.0, 540, 780),
     }
     def_score, min_w, max_w = default_scores[req.exam_type]
     full_score = req.full_score if req.full_score > 0 else def_score

@@ -37,7 +37,7 @@
       </button>
     </view>
     <view v-if="filtersOpen" class="filter-panel">
-      <view v-if="activeType !== 'kaoyan_english'" class="filter-row">
+      <view v-if="activeType !== 'kaoyan_english' && activeType !== 'kaoyan_396'" class="filter-row">
         <text class="filter-label">地区</text>
         <scroll-view scroll-x class="chip-scroll">
           <view class="chip-list">
@@ -84,6 +84,22 @@
           </view>
         </scroll-view>
       </view>
+
+      <view v-if="activeType === 'kaoyan_396'" class="filter-row">
+        <text class="filter-label">题型</text>
+        <scroll-view scroll-x class="chip-scroll">
+          <view class="chip-list">
+            <view
+              v-for="k in kaoyan396SubTypes"
+              :key="k.value"
+              :class="['chip', activeSubType === k.value ? 'chip-active' : '']"
+              @click="selectSubType(k.value)"
+            >
+              {{ k.label }}
+            </view>
+          </view>
+        </scroll-view>
+      </view>
     </view>
 
     <!-- 真题列表 -->
@@ -107,7 +123,7 @@
         <view class="card-title">{{ listTitle(q) }}</view>
         <view class="card-meta">
           <text v-if="q.word_requirement">{{ q.word_requirement }}</text>
-          <text v-if="q.exam_type === 'shenlun_short' && q.scoring_point_count > 0">{{ q.scoring_point_count }} 个采分点</text>
+          <text v-if="(q.exam_type === 'shenlun_short' || q.exam_type === 'kaoyan_396') && q.scoring_point_count > 0">{{ q.scoring_point_count }} 个{{ q.exam_type === 'kaoyan_396' ? '逻辑漏洞点' : '采分点' }}</text>
         </view>
       </view>
       <view v-if="loadingMore" class="load-more">加载更多真题中...</view>
@@ -149,6 +165,7 @@ const tabs = [
   { label: "申论小题", value: "shenlun_short" },
   { label: "申论大作文", value: "shenlun_essay" },
   { label: "考研英语", value: "kaoyan_english" },
+  { label: "396经综", value: "kaoyan_396" },
 ];
 
 const regions = ref<Array<{ label: string; value: string }>>([
@@ -200,19 +217,27 @@ const kaoyanSubTypes = [
   { label: "英语二·小作文", value: "英语二·小作文" },
 ];
 
+const kaoyan396SubTypes = [
+  { label: "全部", value: "" },
+  { label: "论证有效性分析", value: "论证有效性分析" },
+  { label: "论说文", value: "论说文" },
+];
+
 const activeType = ref("shenlun_short");
 const examLabel = computed(() => tabs.find((tab) => tab.value === activeType.value)!.label);
 const activeRegion = ref("");
 const shortSubType = ref("");
 const englishSubType = ref("");
+const kaoyan396SubType = ref("");
 const activeSubType = computed(() => {
   if (activeType.value === "kaoyan_english") return englishSubType.value;
+  if (activeType.value === "kaoyan_396") return kaoyan396SubType.value;
   if (activeType.value === "shenlun_short") return shortSubType.value;
   return "";
 });
 const filtersOpen = ref(false);
 const filterSummary = computed(() => {
-  const region = activeType.value === "kaoyan_english" ? "" : activeRegion.value;
+  const region = activeType.value === "kaoyan_english" || activeType.value === "kaoyan_396" ? "" : activeRegion.value;
   return [region, activeSubType.value].filter(Boolean).join(" · ") || "筛选";
 });
 const keyword = ref("");
@@ -276,7 +301,7 @@ async function fetchQuestions(reset = true) {
       `page=${nextPage}`,
       `page_size=${pageSize}`,
     ];
-    if (activeType.value !== "kaoyan_english" && activeRegion.value) {
+    if (activeType.value !== "kaoyan_english" && activeType.value !== "kaoyan_396" && activeRegion.value) {
       params.push(`region=${encodeURIComponent(activeRegion.value)}`);
     }
     if (activeSubType.value) {
@@ -324,6 +349,7 @@ function selectRegion(val: string) {
 
 function selectSubType(val: string) {
   if (activeType.value === "kaoyan_english") englishSubType.value = val;
+  else if (activeType.value === "kaoyan_396") kaoyan396SubType.value = val;
   else shortSubType.value = val;
   search();
 }

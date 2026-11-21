@@ -150,6 +150,7 @@ function examTypeName(t: string) {
   if (t === "shenlun_short") return "申论小题";
   if (t === "shenlun_essay") return "申论大作文";
   if (t === "kaoyan_english") return "考研英语";
+  if (t === "kaoyan_396") return "396经综";
   return t;
 }
 

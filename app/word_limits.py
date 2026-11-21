@@ -39,3 +39,26 @@ def short_answer_limits(prompt: str, minimum: int, maximum: int) -> tuple[int, i
             int(upper[1] or upper[2]) if upper else 0,
         )
     return minimum, maximum
+
+
+def kaoyan_396_word_limits(prompt: str, minimum: int, maximum: int) -> tuple[int, int, str]:
+    """解析 396 经综写作（论证有效性分析 600字左右 / 论说文 700字左右）字数要求与容差区间。"""
+    about = re.search(r"(\d+)\s*字左右", prompt)
+    if about:
+        target = int(about[1])
+        low = round(target * 0.9)
+        high = round(target * 1.15)
+        if not minimum or not maximum or minimum > target or maximum < target:
+            minimum, maximum = low, high
+        return minimum, maximum, f"约 {target} 字（{minimum}～{maximum} 字）"
+    low, high = short_answer_limits(prompt, minimum, maximum)
+    if low and high:
+        label = f"{low}～{high} 字"
+    elif high:
+        label = f"不超过 {high} 字"
+    elif low:
+        label = f"不少于 {low} 字"
+    else:
+        label = ""
+    return low, high, label
+

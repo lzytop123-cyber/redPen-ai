@@ -38,10 +38,10 @@
         {{ wordWarning }}
       </view>
 
-      <!-- 申论采分点明细 + 命中率可视化条 -->
+      <!-- 申论采分点 / 396逻辑漏洞点明细 + 命中率可视化条 -->
       <view v-if="report.shenlun_detail" class="card">
         <view class="card-h-row">
-          <view class="card-h">采分点</view>
+          <view class="card-h">{{ report.exam_type === 'kaoyan_396' ? '逻辑漏洞采分点' : '采分点' }}</view>
           <text class="hit-summary">命中 {{ hitStats.hit }} / {{ hitStats.total }}（部分 {{ hitStats.partial }}）</text>
         </view>
 

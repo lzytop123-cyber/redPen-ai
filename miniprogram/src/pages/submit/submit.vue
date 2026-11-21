@@ -130,6 +130,7 @@ const examTypes = [
   { label: "申论小题", value: "shenlun_short" },
   { label: "申论大作文", value: "shenlun_essay" },
   { label: "考研英语", value: "kaoyan_english" },
+  { label: "396经综", value: "kaoyan_396" },
 ];
 
 interface Question {

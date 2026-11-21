@@ -1,4 +1,4 @@
-export type ExamType = "shenlun_short" | "shenlun_essay" | "kaoyan_english";
+export type ExamType = "shenlun_short" | "shenlun_essay" | "kaoyan_english" | "kaoyan_396";
 
 export interface UserInfo {
   user_id: number;

@@ -338,6 +338,7 @@ const examTypes: Array<{ label: string; value: ExamType }> = [
   { label: "申论小题", value: "shenlun_short" },
   { label: "申论大作文", value: "shenlun_essay" },
   { label: "考研英语作文", value: "kaoyan_english" },
+  { label: "396经综写作", value: "kaoyan_396" },
 ];
 
 const isCustom = computed(() => Boolean(props.customMode) || !props.questionId);
@@ -381,6 +382,7 @@ const customDefaultLimits: Record<ExamType, { min: number; max: number }> = {
   shenlun_short: { min: 120, max: 300 },
   shenlun_essay: { min: 1000, max: 1200 },
   kaoyan_english: { min: 160, max: 220 },
+  kaoyan_396: { min: 540, max: 780 },
 };
 
 const wordRequirement = computed(() => {
@@ -762,6 +764,7 @@ let examTimerHandle: number | undefined;
 const suggestedSeconds = computed(() => {
   if (activeExamType.value === "shenlun_essay") return 60 * 60;
   if (activeExamType.value === "kaoyan_english") return 35 * 60;
+  if (activeExamType.value === "kaoyan_396") return 30 * 60;
   return 25 * 60;
 });
 

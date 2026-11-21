@@ -17,6 +17,7 @@
         <option value="shenlun_short">申论小题</option>
         <option value="shenlun_essay">申论大作文</option>
         <option value="kaoyan_english">考研英语</option>
+        <option value="kaoyan_396">396经综写作</option>
       </select>
       <input v-model="keyword" class="input" placeholder="搜索任务ID / 真题ID / 标题" style="width:240px;" @keyup.enter="resetAndLoad" />
       <button class="btn btn-primary" @click="resetAndLoad">筛选</button>

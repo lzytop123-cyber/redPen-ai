@@ -10,13 +10,16 @@ from app.db.database import get_db
 from app.db.models import QuestionModel
 from app.pdf_exporter import build_question_pdf
 
-from app.word_limits import english_word_limits, short_answer_limits
+from app.word_limits import english_word_limits, kaoyan_396_word_limits, short_answer_limits
 
 
 def _word_limits(q: QuestionModel) -> dict[str, int | str]:
     minimum, maximum = q.min_words, q.max_words
     if q.exam_type == "kaoyan_english":
         minimum, maximum, label = english_word_limits(q.prompt, minimum, maximum)
+        return {"min_words": minimum, "max_words": maximum, "word_requirement": label}
+    if q.exam_type == "kaoyan_396":
+        minimum, maximum, label = kaoyan_396_word_limits(q.prompt, minimum, maximum)
         return {"min_words": minimum, "max_words": maximum, "word_requirement": label}
     if q.exam_type == "shenlun_short":
         minimum, maximum = short_answer_limits(q.prompt, minimum, maximum)

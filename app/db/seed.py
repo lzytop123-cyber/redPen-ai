@@ -8,18 +8,31 @@ from app.db.models import QuestionModel
 
 
 async def seed_questions_if_empty(db: AsyncSession) -> int:
-    """服务启动时自动将清洗好的 287 道真题 + 演示题幂等导入数据库"""
+    """服务启动时自动将清洗好的真题库幂等导入数据库（支持增量补齐新增科目如 396 经综）"""
     existing_count = await db.scalar(select(func.count(QuestionModel.question_id)))
     if existing_count and existing_count > 0:
-        return 0
+        count_396 = await db.scalar(
+            select(func.count(QuestionModel.question_id)).where(
+                QuestionModel.exam_type == "kaoyan_396"
+            )
+        )
+        if count_396 and count_396 > 0:
+            return 0
+        seed_paths = [Path("data/kaoyan_396_questions.json")]
+    else:
+        seed_paths = [
+            Path("data/shenlun_questions.json"),
+            Path("data/kaoyan_questions.json"),
+            Path("data/kaoyan_396_questions.json"),
+            Path("data/sample_questions.json"),
+        ]
 
+    existing_ids = set(
+        (await db.execute(select(QuestionModel.question_id))).scalars().all()
+    )
     inserted = 0
-    seen_ids: set[str] = set()
-    for path in [
-        Path("data/shenlun_questions.json"),
-        Path("data/kaoyan_questions.json"),
-        Path("data/sample_questions.json"),
-    ]:
+    seen_ids: set[str] = set(existing_ids)
+    for path in seed_paths:
         if not path.exists():
             continue
         items = json.loads(path.read_text(encoding="utf-8"))

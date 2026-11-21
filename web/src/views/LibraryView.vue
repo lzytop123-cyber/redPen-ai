@@ -6,7 +6,7 @@
           <h1>真题精批</h1>
           <span class="vermilion-seal" aria-hidden="true">AI 阅卷</span>
         </div>
-        <p class="hero-subtitle">申论与考研英语 · 对照采分点逐句红笔批注与同思路升格</p>
+        <p class="hero-subtitle">申论、考研英语与 396 经综 · 对照采分点逐句红笔批注与同思路升格</p>
         <form class="search-wrap" role="search" @submit.prevent="handleSearch">
           <span class="magnifier" aria-hidden="true"></span>
           <input v-model="keyword" type="text" inputmode="search" aria-label="搜索题库" placeholder="搜试卷、地区或题目关键词" />
@@ -33,14 +33,14 @@
           </button>
           <div id="question-filters" class="filter-panel" :class="{ open: filtersOpen }">
             <h2 class="group-title">筛选条件</h2>
-            <label v-if="activeType !== 'kaoyan_english'">地区
+            <label v-if="activeType !== 'kaoyan_english' && activeType !== 'kaoyan_396'">地区
               <select aria-label="地区" :value="activeRegion" @change="selectRegion(($event.target as HTMLSelectElement).value)">
                 <option v-for="r in regions" :key="r.value" :value="r.value">{{ r.count ? `${r.label} (${r.count})` : r.label }}</option>
               </select>
             </label>
             <label v-if="activeType !== 'shenlun_essay'">题型
               <select aria-label="题型" :value="activeSubType" @change="selectSubType(($event.target as HTMLSelectElement).value)">
-                <option v-for="t in (activeType === 'kaoyan_english' ? kaoyanSubTypes : shortSubTypes)" :key="t.value" :value="t.value">{{ t.value ? t.label : "全部题型" }}</option>
+                <option v-for="t in currentSubTypeOptions" :key="t.value" :value="t.value">{{ t.value ? t.label : "全部题型" }}</option>
               </select>
             </label>
             <label>年份
@@ -86,7 +86,7 @@
           </span>
           <span class="q-year">{{ q.year || "—" }}</span>
           <span class="q-score">{{ q.full_score }} <small>分</small></span>
-          <span class="q-limit">{{ q.word_requirement || "见题干" }}<small v-if="q.exam_type === 'shenlun_short' && q.scoring_point_count">{{ q.scoring_point_count }} 个采分点</small></span>
+          <span class="q-limit">{{ q.word_requirement || "见题干" }}<small v-if="(q.exam_type === 'shenlun_short' || q.exam_type === 'kaoyan_396') && q.scoring_point_count">{{ q.scoring_point_count }} 个{{ q.exam_type === 'kaoyan_396' ? '逻辑漏洞点' : '采分点' }}</small></span>
           <span class="q-arrow" aria-hidden="true">↗</span>
         </button>
       </div>
@@ -126,6 +126,7 @@ const tabs: Array<{ label: string; value: ExamType }> = [
   { label: "申论小题", value: "shenlun_short" },
   { label: "申论大作文", value: "shenlun_essay" },
   { label: "考研英语作文", value: "kaoyan_english" },
+  { label: "396经综写作", value: "kaoyan_396" },
 ];
 
 const shortSubTypes = [
@@ -144,7 +145,18 @@ const kaoyanSubTypes = [
   { label: "大作文", value: "大作文" },
 ];
 
+const kaoyan396SubTypes = [
+  { label: "全部题型", value: "" },
+  { label: "论证有效性分析", value: "论证有效性分析" },
+  { label: "论说文", value: "论说文" },
+];
+
 const activeType = ref<ExamType>("shenlun_short");
+const currentSubTypeOptions = computed(() => {
+  if (activeType.value === "kaoyan_english") return kaoyanSubTypes;
+  if (activeType.value === "kaoyan_396") return kaoyan396SubTypes;
+  return shortSubTypes;
+});
 const activeRegion = ref("");
 const activeSubType = ref("");
 const activeYear = ref("");
@@ -154,7 +166,7 @@ const appliedKeyword = ref("");
 let latestRequest = 0;
 const filtersOpen = ref(false);
 const filterSummary = computed(() => [
-  activeType.value === "kaoyan_english" ? "" : activeRegion.value,
+  activeType.value === "kaoyan_english" || activeType.value === "kaoyan_396" ? "" : activeRegion.value,
   activeSubType.value,
   activeYear.value ? `${activeYear.value}年` : "",
 ].filter(Boolean).join(" · "));
@@ -217,7 +229,7 @@ async function fetchQuestions(reset = true) {
     params.set("exam_type", activeType.value);
     params.set("page", String(nextPage));
     params.set("page_size", String(pageSize));
-    if (activeType.value !== "kaoyan_english" && activeRegion.value) {
+    if (activeType.value !== "kaoyan_english" && activeType.value !== "kaoyan_396" && activeRegion.value) {
       params.set("region", activeRegion.value);
     }
     if (activeSubType.value) {
@@ -325,6 +337,7 @@ onMounted(() => {
 .book-mark::after { content: ""; position: absolute; top: 4px; left: 2px; right: 2px; height: 1px; background: currentColor; }
 .book-mark[data-exam="shenlun_essay"]::after { box-shadow: 0 3px currentColor; }
 .book-mark[data-exam="kaoyan_english"]::after { content: "A"; top: -1px; left: 1px; background: transparent; font: 600 11px/16px Georgia, serif; }
+.book-mark[data-exam="kaoyan_396"]::after { content: "经"; top: -1px; left: 0px; background: transparent; font: 700 9px/16px var(--font-serif); }
 .filter-panel { display: grid; gap: 12px; border-top: 1px solid #e3ddd1; margin-top: 20px; padding-top: 20px; }
 .filter-panel .group-title { margin: 0; }
 .filter-panel label { display: grid; gap: 5px; font-size: 12px; color: #6e6b63; }

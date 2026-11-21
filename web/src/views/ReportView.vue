@@ -72,10 +72,10 @@
       <!-- 双栏主体：左栏采分点+红笔批注，右栏吸顶升格范文 -->
       <div class="report-columns">
         <div class="col-left">
-          <!-- 一、申论小题标准采分点核对 -->
+          <!-- 一、申论小题标准采分点 / 396论证有效性分析逻辑漏洞点核对 -->
           <section v-if="report.shenlun_detail" class="paper-card section-card">
             <div class="sec-head">
-              <h2>采分点</h2>
+              <h2>{{ report.exam_type === "kaoyan_396" ? "逻辑漏洞采分点" : "采分点" }}</h2>
               <span class="hit-stat">
                 命中 <strong>{{ hitStats.hit }}</strong> / {{ hitStats.total }}
                 <template v-if="hitStats.partial > 0">（部分命中 {{ hitStats.partial }}）</template>

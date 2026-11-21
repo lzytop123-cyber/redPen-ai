@@ -4,7 +4,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
-from app.word_limits import english_word_limits, short_answer_limits
+from app.word_limits import english_word_limits, kaoyan_396_word_limits, short_answer_limits
 
 
 def _normalize_quote_text(text: str) -> str:
@@ -17,6 +17,7 @@ class ExamType(str, Enum):
     SHENLUN_SHORT = "shenlun_short"      # 考公申论小题（采分点驱动：概括/对策/分析/公文）
     SHENLUN_ESSAY = "shenlun_essay"      # 考公申论大作文（五档维度量表驱动）
     KAOYAN_ENGLISH = "kaoyan_english"    # 考研英语作文（五档量表驱动）
+    KAOYAN_396 = "kaoyan_396"            # 396经济类综合能力写作（论证有效性分析 + 论说文）
 
 
 # =========================
@@ -57,6 +58,10 @@ class Question(BaseModel):
             )
         if self.exam_type == ExamType.SHENLUN_SHORT:
             self.min_words, self.max_words = short_answer_limits(
+                self.prompt, self.min_words, self.max_words
+            )
+        if self.exam_type == ExamType.KAOYAN_396:
+            self.min_words, self.max_words, _ = kaoyan_396_word_limits(
                 self.prompt, self.min_words, self.max_words
             )
         return self

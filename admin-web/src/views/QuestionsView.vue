@@ -11,6 +11,7 @@
         <option value="shenlun_short">申论小题</option>
         <option value="shenlun_essay">申论大作文</option>
         <option value="kaoyan_english">考研英语</option>
+        <option value="kaoyan_396">396经综写作</option>
       </select>
       <input v-model="region" class="input" placeholder="地区（如 国考/山西/贵州）" style="width:160px;" @keyup.enter="resetAndLoad" />
       <select v-model="hasPoints" class="select" @change="resetAndLoad">

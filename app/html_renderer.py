@@ -21,7 +21,7 @@ def render_html_report(report: GradingReport, output_path: str | Path) -> Path:
 
     # 1. 采分点或维度详情 HTML
     detail_html = ""
-    if report.exam_type == ExamType.SHENLUN_SHORT and report.shenlun_detail:
+    if report.shenlun_detail:
         rows = []
         status_badge = {
             "hit": '<span class="badge hit">命中</span>',
@@ -35,9 +35,10 @@ def render_html_report(report: GradingReport, output_path: str | Path) -> Path:
                 f"<td>{html.escape(m.evidence_quote or '—')}</td>"
                 f"<td>{html.escape(m.comment)}</td></tr>"
             )
+        sec_title = "一、逻辑漏洞采分点核对明细" if report.exam_type == ExamType.KAOYAN_396 else "一、标准采分点核对明细"
         detail_html = f"""
         <section class="card">
-          <h2>一、标准采分点核对明细</h2>
+          <h2>{sec_title}</h2>
           <table>
             <thead><tr><th>编号</th><th>判定</th><th>原文依据</th><th>考官点评</th></tr></thead>
             <tbody>{''.join(rows)}</tbody>
@@ -45,7 +46,7 @@ def render_html_report(report: GradingReport, output_path: str | Path) -> Path:
           <p class="sub-note"><b>条理与规范评价：</b>{html.escape(report.shenlun_detail.structure_comment)}</p>
         </section>
         """
-    elif report.exam_type == ExamType.SHENLUN_ESSAY and report.shenlun_essay_detail:
+    elif report.shenlun_essay_detail:
         rows = []
         for d in report.shenlun_essay_detail.dimensions:
             rows.append(
@@ -53,9 +54,10 @@ def render_html_report(report: GradingReport, output_path: str | Path) -> Path:
                 f"<td>第 {d.level} 档 / 5 档（权重 {int(d.weight*100)}%）</td>"
                 f"<td>{html.escape(d.comment)}</td></tr>"
             )
+        sec_title = "一、396经综写作四维量表核对" if report.exam_type == ExamType.KAOYAN_396 else "一、申论大作文四维量表核对"
         detail_html = f"""
         <section class="card">
-          <h2>一、申论大作文四维量表核对</h2>
+          <h2>{sec_title}</h2>
           <table>
             <thead><tr><th>评分维度</th><th>定档</th><th>考官点评</th></tr></thead>
             <tbody>{''.join(rows)}</tbody>

@@ -52,3 +52,49 @@ class PracticeFeedbackTests(unittest.TestCase):
         _, prompt = build_kaoyan_step1_prompts(question, "The rate increased.")
         self.assertIn("8.8%", prompt)
         self.assertIn("25.4%", prompt)
+
+    def test_kaoyan_396_word_limits_and_pipeline_grading(self):
+        import asyncio
+        import json
+        from pathlib import Path
+        from app.pipeline import GradingPipeline
+
+        rows = json.loads(Path("data/kaoyan_396_questions.json").read_text(encoding="utf-8"))
+        q_analysis_dict = next(r for r in rows if r["question_id"] == "KY396-2023-A")
+        q_essay_dict = next(r for r in rows if r["question_id"] == "KY396-2025-B")
+
+        q_analysis = Question.model_validate(q_analysis_dict)
+        q_essay = Question.model_validate(q_essay_dict)
+        self.assertEqual((q_analysis.min_words, q_analysis.max_words), (540, 680))
+        self.assertEqual((q_essay.min_words, q_essay.max_words), (630, 780))
+
+        row_396 = QuestionModel(**{k: v for k, v in q_analysis_dict.items() if k != "scoring_points"}, scoring_points=q_analysis_dict["scoring_points"])
+        self.assertIn("600", _word_limits(row_396)["word_requirement"])
+
+        pipeline = GradingPipeline()
+        rep_a = asyncio.run(
+            pipeline.run(
+                q_analysis,
+                student_answer="首先，降低期望值未必马上减轻负担。其次，将学习类比马拉松不当。再次，素质教育未必减负。最后，出台法规并非充分条件。",
+                mock=True,
+            )
+        )
+        self.assertIsNotNone(rep_a.shenlun_detail)
+        self.assertEqual(len(rep_a.shenlun_detail.point_matches), 4)
+        payload_a = rep_a.model_dump()
+        _attach_material_evidence(payload_a, q_analysis)
+        self.assertEqual(
+            payload_a["shenlun_detail"]["point_matches"][0]["material_quote"],
+            "破除“望子成龙”的传统观念，把家长的期望值降低一些，中小学生过重的学习负担马上就减轻了",
+        )
+
+        rep_b = asyncio.run(
+            pipeline.run(
+                q_essay,
+                student_answer="企业发展既需要专注深耕筑牢技术壁垒，又需要审慎跨界激发第二增长曲线。唯有守正出奇方能行稳致远。",
+                mock=True,
+            )
+        )
+        self.assertIsNotNone(rep_b.shenlun_essay_detail)
+        self.assertEqual(len(rep_b.shenlun_essay_detail.dimensions), 4)
+
