@@ -7,6 +7,43 @@ from app.schemas import (
 )
 
 
+def _detect_paper_capability_hint(question: Question) -> str:
+    """
+    依据官方公开考试大纲，按卷种自动注入能力侧重提示（不改变权重或采分点规则，仅校准阅卷视角与升格语感）。
+    """
+    meta = f"{question.paper} {question.title}"
+
+    if "公安" in meta:
+        return (
+            "【本卷考纲能力侧重（公安专业和申论）】\n"
+            "重点关注：阅读理解、行政管理、依法处置与文字表达；点评与升格应体现法治底线、规范执法与应急处置实效。"
+        )
+    if "行政执法" in meta or "执法" in meta or ("江苏" in meta and ("B类" in meta or "B卷" in meta)):
+        return (
+            "【本卷考纲能力侧重（行政执法类）】\n"
+            "重点关注：依法办事能力（遵循依法行政原则、程序正当、法理情兼顾）与公共服务能力（准确了解公众需求、便民高效）；"
+            "批注与升格应突出依法行政视角与群众服务温度。"
+        )
+    if ("江苏" in meta and ("C类" in meta or "C卷" in meta)) or any(k in meta for k in ["乡镇", "基层", "县乡", "县镇"]):
+        return (
+            "【本卷考纲能力侧重（基层/乡镇类）】\n"
+            "重点关注：贯彻执行、群众工作能力与基层实操应用写作；批注与升格应接地气、措施务实可落地，切忌空喊宏大口号。"
+        )
+    if any(k in meta for k in ["副省", "省部", "中央", "申论一"]) or ("江苏" in meta and ("A类" in meta or "A卷" in meta)):
+        return (
+            "【本卷考纲能力侧重（省级/综合管理A类）】\n"
+            "重点关注：阅读理解（揭示本质问题）、综合分析（多角度归纳并作出合理推断或评价）、提出和解决问题与规范简明的文字表达；"
+            "批注与升格应拔高思维站位，避免停留在表面现象罗列。"
+        )
+    if any(k in meta for k in ["地市", "市地", "申论二"]):
+        return (
+            "【本卷考纲能力侧重（市地级综合管理类）】\n"
+            "重点关注：贯彻执行能力（准确理解工作目标和组织意图、依法行政）与务实解决问题能力；"
+            "批注与升格应紧扣工作目标与可操作性。"
+        )
+    return ""
+
+
 def build_shenlun_step1_prompts(question: Question, student_answer: str) -> tuple[str, str]:
     system_prompt = (
         "你是一位极其严苛的国考/省考申论官方阅卷组长，秉持“宁严勿宽、按点给分、有据可依”的阅卷原则。\n"
@@ -48,7 +85,10 @@ def build_shenlun_step2_prompts(
     )
     sentences_text = "\n".join(f"[{s.sentence_id}] {s.text}" for s in sentences)
     step1_summary = step1.model_dump_json(ensure_ascii=False)
+    cap_hint = _detect_paper_capability_hint(question)
+    cap_block = f"{cap_hint}\n\n" if cap_hint else ""
     user_prompt = (
+        f"{cap_block}"
         f"【题目要求】\n{question.prompt}\n\n"
         f"【已核对的采分点情况】\n{step1_summary}\n\n"
         f"【考生带编号原句】\n{sentences_text}\n\n"
@@ -71,7 +111,10 @@ def build_shenlun_step3_prompts(
     points_text = "\n".join(
         f"- {p.point_id} ({p.keyword}): {p.description}" for p in question.scoring_points
     )
+    cap_hint = _detect_paper_capability_hint(question)
+    cap_block = f"{cap_hint}\n\n" if cap_hint else ""
     user_prompt = (
+        f"{cap_block}"
         f"【题目要求】\n{question.prompt}\n\n"
         f"【全部标准采分点】\n{points_text}\n\n"
         f"【考生原稿】\n{student_answer}\n\n"
@@ -95,7 +138,10 @@ def build_shenlun_essay_step1_prompts(question: Question, student_answer: str) -
         "4. 语言规范与公文语感（weight: 0.20）\n"
         "同时必须明确判定：中心论点是否切题（thesis_accuracy）以及是否有效结合给定材料（material_usage）。"
     )
+    cap_hint = _detect_paper_capability_hint(question)
+    cap_block = f"{cap_hint}\n\n" if cap_hint else ""
     user_prompt = (
+        f"{cap_block}"
         f"【大作文题目要求】\n{question.prompt}\n\n"
         f"【给定材料】\n{question.material_summary}\n\n"
         f"【参考立意/范文参考】\n{question.reference_answer}\n\n"
@@ -117,7 +163,10 @@ def build_shenlun_essay_step2_prompts(
         "3. 每条批注给出可直接替换的高分公文规范改写 suggestion。"
     )
     sentences_text = "\n".join(f"[{s.sentence_id}] {s.text}" for s in sentences)
+    cap_hint = _detect_paper_capability_hint(question)
+    cap_block = f"{cap_hint}\n\n" if cap_hint else ""
     user_prompt = (
+        f"{cap_block}"
         f"【题目要求】\n{question.prompt}\n\n"
         f"【维度初评】\n{step1.model_dump_json(ensure_ascii=False)}\n\n"
         f"【考生带编号原句】\n{sentences_text}\n\n"
@@ -137,7 +186,10 @@ def build_shenlun_essay_step3_prompts(
         "2. 强化开头破题、优化对仗工整的分论点段首句、自然融入给定材料案例、提升机关公文语感；\n"
         "3. 输出一篇字数约 1000 字的一类文升格版，并列出 3~5 条核心提分亮点。"
     )
+    cap_hint = _detect_paper_capability_hint(question)
+    cap_block = f"{cap_hint}\n\n" if cap_hint else ""
     user_prompt = (
+        f"{cap_block}"
         f"【题目要求】\n{question.prompt}\n\n"
         f"【给定材料】\n{question.material_summary}\n\n"
         f"【考生原稿】\n{student_answer}\n\n"
