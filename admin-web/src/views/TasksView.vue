@@ -84,9 +84,10 @@
 
         <div v-if="detail.image_filename" class="detail-sec">
           <h4>📷 用户上传的手写答卷原图</h4>
-          <a :href="uploadImageUrl(detail.image_filename)" target="_blank">
-            <img :src="uploadImageUrl(detail.image_filename)" style="max-width:100%;max-height:360px;border-radius:8px;border:1px solid #e2e8f0;" />
+          <a v-if="detailImageUrl" :href="detailImageUrl" target="_blank">
+            <img :src="detailImageUrl" style="max-width:100%;max-height:360px;border-radius:8px;border:1px solid #e2e8f0;" />
           </a>
+          <div v-else style="font-size:12px;color:#64748b;">正在加载原图...</div>
         </div>
 
         <div class="detail-sec">
@@ -132,8 +133,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { adminFetch, uploadImageUrl } from "../api";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { adminFetch, fetchUploadImageBlobUrl } from "../api";
 
 const status = ref("");
 const examType = ref("");
@@ -143,6 +144,20 @@ const pageSize = 20;
 const total = ref(0);
 const items = ref<any[]>([]);
 const detail = ref<any>(null);
+const detailImageUrl = ref("");
+
+function revokeDetailImg() {
+  if (detailImageUrl.value) {
+    URL.revokeObjectURL(detailImageUrl.value);
+    detailImageUrl.value = "";
+  }
+}
+
+watch(detail, (val) => {
+  if (!val) revokeDetailImg();
+});
+
+onBeforeUnmount(revokeDetailImg);
 
 function formatTime(v: string) {
   return v ? v.replace("T", " ").slice(0, 16) : "";
@@ -164,7 +179,16 @@ function resetAndLoad() {
 }
 
 async function openDetail(taskId: string) {
-  detail.value = await adminFetch(`/api/admin/tasks/${encodeURIComponent(taskId)}`);
+  revokeDetailImg();
+  const data = await adminFetch(`/api/admin/tasks/${encodeURIComponent(taskId)}`);
+  detail.value = data;
+  if (data.image_filename) {
+    try {
+      detailImageUrl.value = await fetchUploadImageBlobUrl(data.image_filename);
+    } catch {
+      detailImageUrl.value = "";
+    }
+  }
 }
 
 async function refund(taskId: string) {

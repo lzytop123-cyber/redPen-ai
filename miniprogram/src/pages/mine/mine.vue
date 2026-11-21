@@ -1,27 +1,26 @@
 <template>
   <view class="page">
     <view class="profile-card">
-      <view class="name">{{ user?.nickname || "备考战友" }}</view>
+      <view class="name">{{ user?.nickname || "我的账户" }}</view>
       <view class="quota-row">
         <view class="quota-item">
-          <view class="q-num">{{ user?.free_quota ?? 0 }}</view>
-          <view class="q-label">剩余免费体验</view>
+          <view class="q-num">{{ user?.free_quota ?? "—" }}</view>
+          <view class="q-label">免费次数</view>
         </view>
         <view class="quota-item">
-          <view class="q-num">{{ user?.paid_quota ?? 0 }}</view>
-          <view class="q-label">剩余按次包</view>
+          <view class="q-num">{{ user?.paid_quota ?? "—" }}</view>
+          <view class="q-label">按次余额</view>
         </view>
         <view class="quota-item">
-          <view class="q-num">{{ user?.is_vip ? "生效中" : "未开通" }}</view>
-          <view class="q-label">上岸月卡</view>
+          <view class="q-num">{{ user ? (user.is_vip ? "有效" : "未开通") : "—" }}</view>
+          <view class="q-label">月卡状态</view>
         </view>
       </view>
     </view>
 
-    <!-- 兑换码核销卡片（安卓 + iOS 100% 合规过审收款） -->
-    <view class="card" style="margin-bottom: 20rpx;">
-      <view class="card-h">🎁 兑换码激活额度 / 月卡</view>
-      <view class="redeem-desc">在自习室前台或小红书店铺购买激活码后，在此输入即可秒到账</view>
+    <view class="card">
+      <view class="card-h">兑换练习次数或月卡</view>
+      <view class="redeem-desc">输入从自习室前台或店铺取得的兑换码。</view>
       <view class="redeem-row">
         <input
           v-model="redeemInput"
@@ -35,7 +34,7 @@
     </view>
 
     <view class="card">
-      <view class="card-h">精批套餐参考</view>
+      <view class="card-h">套餐说明</view>
       <view class="plan" @click="buyTip('冲刺体验包 9.9元/5次')">
         <view>
           <view class="plan-name">冲刺体验包（5 次精批）</view>
@@ -43,10 +42,10 @@
         </view>
         <view class="price">¥9.9</view>
       </view>
-      <view class="plan highlight" @click="buyTip('上岸畅批月卡 29.9元/月')">
+      <view class="plan" @click="buyTip('上岸畅批月卡 29.9元/月')">
         <view>
           <view class="plan-name">上岸畅批月卡（30 天无限次）</view>
-          <view class="plan-desc">含专属个人薄弱项诊断与同思路升格范文</view>
+          <view class="plan-desc">自激活起 30 天内有效</view>
         </view>
         <view class="price">¥29.9</view>
       </view>
@@ -100,100 +99,20 @@ function buyTip(planName: string) {
 </script>
 
 <style scoped>
-.page {
-  padding: 20rpx 24rpx;
-}
-.profile-card {
-  background: linear-gradient(135deg, #1e3a8a, #2563eb);
-  color: #fff;
-  border-radius: 18rpx;
-  padding: 32rpx 28rpx;
-  margin-bottom: 24rpx;
-}
-.name {
-  font-size: 36rpx;
-  font-weight: 700;
-  margin-bottom: 24rpx;
-}
-.quota-row {
-  display: flex;
-  justify-content: space-between;
-  text-align: center;
-}
-.quota-item {
-  flex: 1;
-}
-.q-num {
-  font-size: 38rpx;
-  font-weight: 800;
-}
-.q-label {
-  font-size: 22rpx;
-  opacity: 0.85;
-  margin-top: 6rpx;
-}
-.card {
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 24rpx;
-}
-.card-h {
-  font-size: 28rpx;
-  font-weight: 700;
-  margin-bottom: 14rpx;
-}
-.redeem-desc {
-  font-size: 23rpx;
-  color: #6b7280;
-  margin-bottom: 16rpx;
-}
-.redeem-row {
-  display: flex;
-  gap: 14rpx;
-  align-items: center;
-}
-.redeem-input {
-  flex: 1;
-  background: #f9fafb;
-  border: 1rpx solid #d1d5db;
-  border-radius: 10rpx;
-  padding: 14rpx 18rpx;
-  font-size: 26rpx;
-}
-.redeem-btn {
-  background: #2563eb;
-  color: #fff;
-  margin: 0;
-  padding: 0 24rpx;
-  line-height: 68rpx;
-  height: 68rpx;
-  border-radius: 10rpx;
-}
-.plan {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 22rpx;
-  border: 2rpx solid #e5e7eb;
-  border-radius: 14rpx;
-  margin-bottom: 16rpx;
-}
-.plan.highlight {
-  border-color: #2563eb;
-  background: #eff6ff;
-}
-.plan-name {
-  font-size: 28rpx;
-  font-weight: 700;
-}
-.plan-desc {
-  font-size: 22rpx;
-  color: #6b7280;
-  margin-top: 6rpx;
-}
-.price {
-  font-size: 36rpx;
-  font-weight: 800;
-  color: #dc2626;
-}
+.page { padding: 42rpx 36rpx 54rpx; }
+.name { font-family: var(--display); font-size: 48rpx; font-weight: 700; padding-bottom: 22rpx; border-bottom: 3rpx solid var(--ink); }
+.quota-row { display: flex; margin: 28rpx 0 32rpx; }
+.quota-item { flex: 1; min-width: 0; padding-left: 18rpx; border-left: 1rpx solid var(--rule); }
+.quota-item:first-child { padding-left: 0; border: 0; }
+.q-num { font-family: var(--display); font-size: 38rpx; line-height: 1.35; font-variant-numeric: tabular-nums; }
+.q-label, .redeem-desc, .plan-desc { color: var(--muted); font-size: 24rpx; margin-top: 6rpx; }
+.card { border-top: 1rpx solid var(--rule); padding: 26rpx 0; }
+.card-h { font-family: var(--display); font-size: 34rpx; font-weight: 700; }
+.redeem-row, .plan { display: flex; align-items: center; gap: 16rpx; }
+.redeem-row { margin-top: 20rpx; }
+.redeem-input { flex: 1; min-width: 0; padding: 0 15rpx; height: 76rpx; font-size: 25rpx; background: white; border: 1rpx solid var(--rule); border-radius: 5rpx; }
+.redeem-btn { flex-shrink: 0; margin: 0; padding: 0 18rpx; line-height: 76rpx; font-size: 26rpx; color: white; background: var(--action); border-radius: 5rpx; }
+.plan { justify-content: space-between; padding: 22rpx 0; border-bottom: 1rpx solid var(--rule); }
+.plan-name { font-size: 28rpx; font-weight: 600; }
+.price { color: var(--ink); font-family: var(--display); font-size: 34rpx; }
 </style>

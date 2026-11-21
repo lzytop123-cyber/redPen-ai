@@ -1,5 +1,5 @@
 <template>
-  <view class="page">
+  <view class="page writing-page">
     <view v-if="!ready" class="card">
       <view class="q-prompt">{{ loadError || "正在打开作答页…" }}</view>
       <button v-if="loadError" class="text-btn" @click="loadEditor">重新加载</button>
@@ -12,7 +12,7 @@
         <view class="q-actions">
           <button v-if="materialSections.length" class="text-btn inline-btn" @click="openReader">查看给定材料</button>
           <button class="pdf-btn" size="mini" :loading="pdfLoading" @click="downloadQuestionPdf">
-            📄 下载/打印原题 PDF
+            原题 PDF
           </button>
         </view>
       </view>
@@ -52,12 +52,11 @@
         <!-- 默认态：拍照优先大卡片（贴合纸质手写后拍照上传的主流场景） -->
         <view v-if="!showTextEditor" class="camera-hero">
           <view class="camera-box" @click="chooseAndOcr">
-            <view class="camera-icon">📷</view>
-            <view class="camera-title">{{ ocrLoading ? "正在识别手写答卷…" : "拍照 / 上传手写答卷" }}</view>
-            <view class="camera-desc">纸质方格纸写完直接拍，支持连拍 1～4 页自动识字</view>
+            <view class="camera-title">{{ ocrLoading ? "正在识别手写答卷…" : "拍摄手写答卷" }}</view>
+            <view class="camera-desc">可从相册选择，每次最多 4 页</view>
           </view>
           <button class="switch-text-btn" @click="manualInputExpanded = true">
-            已有电子稿？点此直接粘贴或手动输入 ›
+            粘贴或输入文字
           </button>
         </view>
 
@@ -65,7 +64,7 @@
         <template v-else>
           <view class="answer-tools">
             <button class="ocr-btn" size="mini" :disabled="busy" :loading="ocrLoading" @click="chooseAndOcr">
-              📷 {{ previewImages.length ? "继续加拍一页" : "拍照录入手写稿" }}
+              {{ previewImages.length ? "继续加拍一页" : "拍照录入手写稿" }}
             </button>
             <text class="tip">最多 4 页，点缩略图可放大核对错字</text>
           </view>
@@ -485,26 +484,10 @@ async function handleSubmit() {
 </script>
 
 <style scoped>
-.page {
-  padding: 20rpx 24rpx 180rpx;
-}
-.card {
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 24rpx;
-  margin-bottom: 20rpx;
-}
-.q-title {
-  font-size: 32rpx;
-  font-weight: 700;
-  margin-bottom: 12rpx;
-}
-.q-prompt {
-  font-size: 26rpx;
-  color: #374151;
-  line-height: 1.65;
-  white-space: pre-wrap;
-}
+.writing-page { padding: 12rpx 36rpx 180rpx; }
+.card { padding: 28rpx 0; border-bottom: 1rpx solid var(--rule); }
+.q-title { font-family: var(--display); font-size: 39rpx; line-height: 1.45; font-weight: 700; margin-bottom: 18rpx; }
+.q-prompt { font-size: 30rpx; color: var(--ink); line-height: 1.8; white-space: pre-wrap; }
 .type-row {
   display: flex;
   gap: 14rpx;
@@ -514,13 +497,13 @@ async function handleSubmit() {
   flex: 1;
   text-align: center;
   padding: 14rpx 0;
-  border-radius: 12rpx;
-  background: #f3f4f6;
+  border-radius: 6rpx;
+  background: var(--wash);
   color: #4b5563;
   font-size: 25rpx;
 }
 .type-pill.active {
-  background: #2563eb;
+  background: var(--action);
   color: #fff;
   font-weight: 600;
 }
@@ -528,9 +511,9 @@ async function handleSubmit() {
   width: 100%;
   min-height: 150rpx;
   margin-top: 12rpx;
-  background: #f9fafb;
-  border: 1rpx solid #e5e7eb;
-  border-radius: 12rpx;
+  background: #fff;
+  border: 1rpx solid var(--rule);
+  border-radius: 6rpx;
   padding: 16rpx;
   box-sizing: border-box;
   font-size: 26rpx;
@@ -548,12 +531,12 @@ async function handleSubmit() {
   display: inline-block;
   padding: 8rpx 20rpx;
   font-size: 23rpx;
-  border-radius: 99rpx;
-  background: #f3f4f6;
+  border-radius: 5rpx;
+  background: var(--wash);
   color: #4b5563;
 }
 .mat-tab-active {
-  background: #2563eb;
+  background: var(--action);
   color: #fff;
   font-weight: 600;
 }
@@ -562,19 +545,16 @@ async function handleSubmit() {
   justify-content: space-between;
   align-items: center;
 }
-.section-title {
-  font-size: 30rpx;
-  font-weight: 700;
-}
+.section-title { font-family: var(--display); font-size: 35rpx; font-weight: 700; }
 .ocr-btn {
-  background: #eff6ff;
-  color: #1d4ed8;
-  border: 1rpx solid #93c5fd;
+  background: var(--wash);
+  color: var(--action);
+  border: 1rpx solid var(--rule);
   margin: 0;
 }
 .tip {
   font-size: 22rpx;
-  color: #6b7280;
+  color: var(--muted);
   margin: 10rpx 0 14rpx;
 }
 .thumb-row {
@@ -592,7 +572,7 @@ async function handleSubmit() {
   width: 100%;
   height: 100%;
   border-radius: 10rpx;
-  border: 1rpx solid #e5e7eb;
+  border: 1rpx solid var(--rule);
 }
 .thumb-del {
   position: absolute;
@@ -602,7 +582,7 @@ async function handleSubmit() {
   height: 34rpx;
   line-height: 32rpx;
   text-align: center;
-  background: #ef4444;
+  background: var(--mark);
   color: #fff;
   border-radius: 99rpx;
   font-size: 22rpx;
@@ -610,23 +590,23 @@ async function handleSubmit() {
 .answer-input {
   width: 100%;
   min-height: 320rpx;
-  background: #f9fafb;
-  border: 1rpx solid #e5e7eb;
-  border-radius: 12rpx;
+  background: #fff;
+  border: 1rpx solid var(--rule);
+  border-radius: 6rpx;
   padding: 18rpx;
   box-sizing: border-box;
-  font-size: 27rpx;
-  line-height: 1.7;
+  font-size: 30rpx;
+  line-height: 1.8;
 }
 .word-bar {
   display: flex;
   justify-content: space-between;
   margin-top: 12rpx;
   font-size: 24rpx;
-  color: #6b7280;
+  color: var(--muted);
 }
 .word-warn {
-  color: #dc2626;
+  color: var(--mark);
   font-weight: 600;
 }
 .footer-bar {
@@ -637,14 +617,10 @@ async function handleSubmit() {
   z-index: 99;
   background: #fff;
   padding: 18rpx 28rpx calc(24rpx + env(safe-area-inset-bottom));
-  box-shadow: 0 -4rpx 16rpx rgba(0, 0, 0, 0.08);
+  border-top: 1rpx solid var(--rule);
 }
-.submit-btn {
-  background: #2563eb;
-  border-radius: 999rpx;
-  font-size: 30rpx;
-  font-weight: 600;
-}
+.submit-btn[type=primary] { max-width: 700px; background: var(--action); color: white; border-radius: 6rpx; font-size: 30rpx; font-weight: 600; }
+.submit-btn[type=primary][disabled] { background: var(--wash); color: var(--muted); }
 .text-btn {
   padding: 8rpx 0;
   margin: 12rpx 0 0;
@@ -652,7 +628,7 @@ async function handleSubmit() {
   line-height: 1.7;
   font-size: 26rpx;
   font-weight: 600;
-  color: #1d4ed8;
+  color: var(--action);
   background: transparent;
 }
 .text-btn::after, .type-pill::after, .mat-tab::after { border: 0; }
@@ -675,28 +651,15 @@ async function handleSubmit() {
 .reader-head { padding: 22rpx 26rpx; display: flex; justify-content: space-between; align-items: center; }
 .reader-actions { display: flex; gap: 14rpx; align-items: center; }
 .q-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 16rpx; gap: 16rpx; }
-.pdf-btn {
-  background: #f0fdf4;
-  color: #15803d;
-  border: 1rpx solid #86efac;
-  margin: 0;
-  font-weight: 600;
-}
+.pdf-btn { background: transparent; color: var(--action); margin: 0; font-size: 25rpx; padding: 6rpx 16rpx; }
 .camera-hero { margin-top: 18rpx; }
-.camera-box {
-  background: linear-gradient(180deg, #f8fbff, #eff6ff);
-  border: 2rpx dashed #60a5fa;
-  border-radius: 16rpx;
-  padding: 56rpx 30rpx;
-  text-align: center;
-}
-.camera-icon { font-size: 64rpx; line-height: 1.1; }
-.camera-title { font-size: 32rpx; font-weight: 700; color: #1d4ed8; margin-top: 14rpx; }
-.camera-desc { font-size: 24rpx; color: #64748b; margin-top: 10rpx; }
+.camera-box { background: var(--wash); border-left: 4rpx solid var(--action); padding: 24rpx; text-align: left; }
+.camera-title { font-size: 31rpx; font-weight: 600; color: var(--action); }
+.camera-desc { font-size: 24rpx; color: var(--muted); margin-top: 6rpx; }
 .switch-text-btn {
   margin-top: 16rpx;
   background: transparent;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 24rpx;
   line-height: 1.8;
 }

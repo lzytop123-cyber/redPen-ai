@@ -66,3 +66,38 @@ async def serve_admin_spa(full_path: str = ""):
         "<h3>后台前端尚未构建，请在 admin-web 目录运行 npm install && npm run build</h3>",
         status_code=503,
     )
+
+
+# 挂载独立 Vue 3 PC Web 端静态产物 (web/dist)
+WEB_DIST = Path("web/dist")
+if (WEB_DIST / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(WEB_DIST / "assets")), name="web-assets")
+if (WEB_DIST / "figures").exists():
+    app.mount("/figures", StaticFiles(directory=str(WEB_DIST / "figures")), name="web-figures")
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+async def serve_web_favicon():
+    f = WEB_DIST / "favicon.svg"
+    if f.exists():
+        return FileResponse(f, media_type="image/svg+xml")
+    return HTMLResponse("", status_code=404)
+
+
+@app.get("/logo.jpg", include_in_schema=False)
+async def serve_web_logo():
+    f = WEB_DIST / "logo.jpg"
+    if f.exists():
+        return FileResponse(f, media_type="image/jpeg")
+    return HTMLResponse("", status_code=404)
+
+
+@app.get("/", include_in_schema=False)
+async def serve_web_root():
+    index_file = WEB_DIST / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return HTMLResponse(
+        "<h3>PC 端尚未构建，请在 web 目录运行 npm install && npm run build（开发模式可访问 http://localhost:5174）</h3>",
+        status_code=503,
+    )

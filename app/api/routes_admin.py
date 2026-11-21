@@ -4,20 +4,24 @@
 """
 
 import csv
+import hmac
 import io
 import secrets
 import string
+import time
+from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes_auth import hash_password
 from app.config import settings
 from app.db.database import get_db
 from app.db.models import GradingTask, QuestionModel, RedeemCode, User
@@ -28,14 +32,29 @@ from app.schemas import ExamType, Question, ScoringPoint
 router = APIRouter(prefix="/api/admin", tags=["运营后台 API"])
 UPLOAD_DIR = Path("data/uploads").resolve()
 
+_ADMIN_FAIL_WINDOW_SEC = 300.0
+_ADMIN_MAX_FAILS = 10
+_ADMIN_FAIL_LOG: dict[str, list[float]] = defaultdict(list)
+
 
 def verify_admin(
+    request: Request,
     x_admin_password: Optional[str] = Header(default=None),
-    pwd: Optional[str] = Query(default=None),
 ) -> None:
-    token = x_admin_password or pwd
-    if not token or token != settings.admin_password:
+    """仅接受 Header 鉴权（禁止 URL 明文传密码），并带防爆破限流"""
+    ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    fails = [t for t in _ADMIN_FAIL_LOG[ip] if now - t < _ADMIN_FAIL_WINDOW_SEC]
+    if len(fails) >= _ADMIN_MAX_FAILS:
+        raise HTTPException(status_code=429, detail="管理员密码错误次数过多，请 5 分钟后再试")
+
+    if not x_admin_password or not hmac.compare_digest(x_admin_password, settings.admin_password):
+        fails.append(now)
+        _ADMIN_FAIL_LOG[ip] = fails
         raise HTTPException(status_code=401, detail="管理员密码错误或未登录")
+
+    if ip in _ADMIN_FAIL_LOG:
+        _ADMIN_FAIL_LOG.pop(ip, None)
 
 
 # =========================
@@ -447,7 +466,11 @@ async def admin_list_users(
 
     if keyword:
         like = f"%{keyword.strip()}%"
-        cond = or_(User.nickname.ilike(like), User.openid.ilike(like))
+        cond = or_(
+            User.username.ilike(like),
+            User.nickname.ilike(like),
+            User.openid.ilike(like),
+        )
         stmt = stmt.where(cond)
         cnt_stmt = cnt_stmt.where(cond)
     if vip_only:
@@ -478,6 +501,7 @@ async def admin_list_users(
         "items": [
             {
                 "user_id": u.id,
+                "username": u.username,
                 "openid": u.openid,
                 "nickname": u.nickname,
                 "free_quota": u.free_quota,
@@ -510,6 +534,27 @@ async def admin_adjust_user(user_id: int, req: AdjustUserReq, db: AsyncSession =
         user.vip_expire_at = base + timedelta(days=req.add_vip_days)
     await db.commit()
     return {"ok": True, "paid_quota": user.paid_quota, "vip_expire_at": user.vip_expire_at}
+
+
+class ResetPasswordReq(BaseModel):
+    new_password: str = Field(..., min_length=6, max_length=64, description="新登录密码（6-64位）")
+
+
+@router.post("/users/{user_id}/reset-password", dependencies=[Depends(verify_admin)])
+async def admin_reset_user_password(
+    user_id: int,
+    req: ResetPasswordReq,
+    db: AsyncSession = Depends(get_db),
+):
+    """售后一键重置 PC 端用户登录密码"""
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if not user.username:
+        raise HTTPException(status_code=400, detail="该用户为纯微信登录账号，未绑定 PC 密码登录")
+    user.password_hash = hash_password(req.new_password)
+    await db.commit()
+    return {"ok": True, "user_id": user.id, "username": user.username}
 
 
 # =========================

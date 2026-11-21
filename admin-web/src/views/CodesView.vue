@@ -2,7 +2,7 @@
   <div class="card">
     <div class="card-title">
       <span>🎁 兑换码与卡密发货中心（共 {{ total }} 个）</span>
-      <a class="btn btn-success" :href="exportCodesCsvUrl()" target="_blank">⬇️ 导出可用卡密 CSV（小红书/淘宝发货）</a>
+      <button class="btn btn-success" @click="handleExportCsv">⬇️ 导出可用卡密 CSV（小红书/淘宝发货）</button>
     </div>
 
     <div class="gen-box">
@@ -77,7 +77,15 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { adminFetch, exportCodesCsvUrl } from "../api";
+import { adminFetch, downloadCodesCsv } from "../api";
+
+async function handleExportCsv() {
+  try {
+    await downloadCodesCsv();
+  } catch (e: any) {
+    alert(e?.message || "导出失败");
+  }
+}
 
 const planName = ref("冲刺体验包(5次)");
 const count = ref(10);

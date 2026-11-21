@@ -33,6 +33,24 @@ def _word_limits(q: QuestionModel) -> dict[str, int | str]:
 router = APIRouter(prefix="/api/questions", tags=["真题库"])
 
 
+@router.get("/years")
+async def list_years(
+    exam_type: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """动态返回题库中真实出现的所有年份（降序）"""
+    stmt = (
+        select(QuestionModel.year)
+        .where(~QuestionModel.question_id.startswith("CUSTOM_"), QuestionModel.year > 0)
+        .distinct()
+        .order_by(QuestionModel.year.desc())
+    )
+    if exam_type:
+        stmt = stmt.where(QuestionModel.exam_type == exam_type)
+    years = (await db.execute(stmt)).scalars().all()
+    return {"items": [int(y) for y in years if y]}
+
+
 @router.get("/regions")
 async def list_regions(db: AsyncSession = Depends(get_db)):
     """动态返回当前申论题库覆盖的所有地区与题目数量（国考排首位，其余按题量降序）"""

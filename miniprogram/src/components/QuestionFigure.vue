@@ -49,7 +49,7 @@ function preview() {
 <style scoped>
 .figure { margin-top: 24rpx; }
 .figure-heading { display: flex; align-items: center; justify-content: space-between; font-size: 26rpx; font-weight: 600; }
-.enlarge { margin: 0; color: #1d4ed8; background: #eff6ff; }
+.enlarge { margin: 0; color: var(--action); background: var(--wash); }
 .figure-image { display: block; width: 100%; border-radius: 12rpx; margin-top: 12rpx; }
-.caption { margin-top: 10rpx; color: #475569; font-size: 24rpx; line-height: 1.6; }
+.caption { margin-top: 10rpx; color: var(--muted); font-size: 24rpx; line-height: 1.6; }
 </style>

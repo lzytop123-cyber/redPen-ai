@@ -70,17 +70,21 @@ def parse_md_paper(path: Path) -> list[Question]:
         maxsplit=1,
     )
     if len(split_match) < 2:
-        # 兜底：直接从第一个“问题一：”或“第一题：”处切分
-        split_match = re.split(r"(?=\n\s*(?:问题一[:：]|第一题[:：]))", body, maxsplit=1)
+        # 兜底：直接从第一个“问题一：”/“第一题：”/“题目1：”处切分
+        split_match = re.split(
+            r"(?=\n\s*(?:问题[一1][:：]|第[一1]题[:：]?|题目[一1][:：]?|【(?:问题|题目)[一1]】))",
+            body,
+            maxsplit=1,
+        )
     if len(split_match) < 2:
         return []
 
     materials_text = split_match[0].strip()
     tasks_text = split_match[1].strip()
 
-    # 按 “问题一：/一、/第一题/【问题一】” 切分各小题（兼容全角空格 \u3000）
+    # 按 “问题一：/一、/第一题/题目1/【问题一】/【题目1】” 切分各小题（兼容全角空格 \u3000 与阿拉伯数字）
     parts = re.split(
-        r"(?:\n|[\u3000\s]{2,})(?=(?:问题[一二三四五六][:：]|[一二三四五六]、|第[一二三四五六]题[:：]?|【问题[一二三四五六]】))",
+        r"(?:\n|[\u3000\s]{2,})(?=(?:问题[一二三四五六1-6][:：]|[一二三四五六]、|第[一二三四五六1-6]题[:：]?|题目[一二三四五六1-6][:：]?|【(?:问题|题目)[一二三四五六1-6]】))",
         "\n" + tasks_text,
     )
     parts = [p.strip() for p in parts if len(p.strip()) >= 15]

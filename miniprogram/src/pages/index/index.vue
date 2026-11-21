@@ -1,9 +1,10 @@
 <template>
   <view class="page">
-    <!-- 顶部品牌栏 -->
     <view class="header">
-      <view class="title">知行岛申论精批</view>
-      <view class="subtitle">覆盖全国 31 省市历年国考/省考申论与考研英语真题</view>
+      <view class="masthead">
+        <view class="title">历年真题</view>
+        <button class="quick-entry" @click="goCustomSubmit">拍自己的题 <text aria-hidden="true">↗</text></button>
+      </view>
       <view class="search-box">
         <input
           v-model="keyword"
@@ -14,15 +15,6 @@
         />
         <text class="search-btn" @click="search">搜索</text>
       </view>
-    </view>
-
-    <!-- 醒目的任意题目自由批改大入口 -->
-    <view class="quick-entry" @click="goCustomSubmit">
-      <view class="quick-left">
-        <view class="quick-title">{{ examLabel }}拍照批改</view>
-        <view class="quick-desc">练习题不在题库？拍下题目和作答即可批改</view>
-      </view>
-      <view class="quick-btn">去批改 →</view>
     </view>
 
     <!-- 大类切换 Tabs -->
@@ -38,7 +30,13 @@
     </view>
 
     <!-- 地区 & 细分题型筛选器 -->
-    <view class="filter-panel">
+    <view class="filter-bar">
+      <text class="result-count">{{ loading ? "正在查题…" : loadError ? "题目列表" : totalCount + " 道题" }}</text>
+      <button class="filter-toggle" :aria-expanded="filtersOpen" @click="filtersOpen = !filtersOpen">
+        {{ filterSummary }} {{ filtersOpen ? "−" : "＋" }}
+      </button>
+    </view>
+    <view v-if="filtersOpen" class="filter-panel">
       <view v-if="activeType !== 'kaoyan_english'" class="filter-row">
         <text class="filter-label">地区</text>
         <scroll-view scroll-x class="chip-scroll">
@@ -90,10 +88,9 @@
 
     <!-- 真题列表 -->
     <view class="list">
-      <view v-if="!loading && !loadError" class="result-count">共匹配 {{ totalCount }} 道真题</view>
       <view v-if="loading" class="empty">加载真题库中...</view>
       <view v-else-if="loadError && questions.length === 0" class="empty" @click="fetchQuestions()">真题加载失败，点此重试</view>
-      <view v-else-if="questions.length === 0" class="empty">暂无匹配真题，可调整筛选或使用上方的拍照批改</view>
+      <view v-else-if="questions.length === 0" class="empty">没有找到题目，可以换个关键词或调整筛选。</view>
       <view
         v-for="q in questions"
         :key="q.question_id"
@@ -107,7 +104,7 @@
           </view>
           <text class="score">满分 {{ q.full_score }} 分</text>
         </view>
-        <view class="card-title">{{ q.title }}</view>
+        <view class="card-title">{{ listTitle(q) }}</view>
         <view class="card-meta">
           <text v-if="q.word_requirement">{{ q.word_requirement }}</text>
           <text v-if="q.exam_type === 'shenlun_short' && q.scoring_point_count > 0">{{ q.scoring_point_count }} 个采分点</text>
@@ -116,7 +113,7 @@
       <view v-if="loadingMore" class="load-more">加载更多真题中...</view>
       <view v-else-if="loadError && questions.length > 0" class="load-more" @click="fetchQuestions(false)">加载失败，点此重试</view>
       <view v-else-if="questions.length > 0 && questions.length >= totalCount" class="load-more">
-        — 已展示全部 {{ totalCount }} 道真题 —
+        已显示全部 {{ totalCount }} 道题
       </view>
     </view>
   </view>
@@ -139,6 +136,13 @@ interface QuestionItem {
   min_words: number;
   max_words: number;
   scoring_point_count: number;
+}
+
+function listTitle(question: QuestionItem): string {
+  const title = question.title.trim();
+  const suffix = question.sub_type && `【${question.sub_type}】`;
+  if (suffix && title.endsWith(suffix)) return title.slice(0, -suffix.length).trim() || title;
+  return title;
 }
 
 const tabs = [
@@ -205,6 +209,11 @@ const activeSubType = computed(() => {
   if (activeType.value === "kaoyan_english") return englishSubType.value;
   if (activeType.value === "shenlun_short") return shortSubType.value;
   return "";
+});
+const filtersOpen = ref(false);
+const filterSummary = computed(() => {
+  const region = activeType.value === "kaoyan_english" ? "" : activeRegion.value;
+  return [region, activeSubType.value].filter(Boolean).join(" · ") || "筛选";
 });
 const keyword = ref("");
 const appliedKeyword = ref("");
@@ -345,195 +354,35 @@ onShow(() => {
 </script>
 
 <style scoped>
-.header {
-  background: linear-gradient(135deg, #1e3a8a, #2563eb);
-  color: #fff;
-  padding: 32rpx 28rpx 36rpx;
-}
-.title {
-  font-size: 38rpx;
-  font-weight: 700;
-}
-.subtitle {
-  font-size: 24rpx;
-  opacity: 0.85;
-  margin-top: 8rpx;
-}
-.search-box {
-  margin-top: 24rpx;
-  display: flex;
-  background: #fff;
-  border-radius: 999rpx;
-  padding: 12rpx 24rpx;
-  align-items: center;
-}
-.search-input {
-  flex: 1;
-  color: #1f2937;
-  font-size: 26rpx;
-}
-.search-btn {
-  color: #2563eb;
-  font-weight: 600;
-  padding-left: 16rpx;
-}
-.quick-entry {
-  margin: 20rpx 24rpx 12rpx;
-  padding: 24rpx 26rpx;
-  background: linear-gradient(135deg, #fff7ed, #ffedd5);
-  border: 2rpx solid #fdba74;
-  border-radius: 18rpx;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.quick-left {
-  flex: 1;
-  padding-right: 16rpx;
-}
-.quick-title {
-  font-size: 32rpx;
-  font-weight: 700;
-  color: #9a3412;
-}
-.quick-desc {
-  font-size: 23rpx;
-  color: #c2410c;
-  margin-top: 6rpx;
-}
-.quick-btn {
-  background: #ea580c;
-  color: #fff;
-  font-size: 24rpx;
-  font-weight: 600;
-  padding: 12rpx 22rpx;
-  border-radius: 999rpx;
-  white-space: nowrap;
-}
-.tabs {
-  display: flex;
-  background: #fff;
-  padding: 16rpx 24rpx;
-  gap: 16rpx;
-  border-bottom: 1rpx solid #f3f4f6;
-}
-.tab-item {
-  flex: 1;
-  text-align: center;
-  padding: 14rpx 0;
-  border-radius: 12rpx;
-  font-size: 26rpx;
-  color: #4b5563;
-  background: #f3f4f6;
-}
-.tab-item.active {
-  background: #2563eb;
-  color: #fff;
-  font-weight: 600;
-}
-.filter-panel {
-  background: #fff;
-  padding: 14rpx 24rpx 18rpx;
-  border-bottom: 1rpx solid #e5e7eb;
-}
-.filter-row {
-  display: flex;
-  align-items: center;
-}
-.filter-label {
-  font-size: 23rpx;
-  color: #6b7280;
-  font-weight: 600;
-  margin-right: 14rpx;
-  white-space: nowrap;
-}
-.chip-scroll {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.chip-list {
-  display: inline-flex;
-  gap: 12rpx;
-}
-.chip {
-  display: inline-block;
-  padding: 8rpx 20rpx;
-  border-radius: 999rpx;
-  font-size: 23rpx;
-  background: #f3f4f6;
-  color: #4b5563;
-}
-.chip-active {
-  background: #dbeafe;
-  color: #1d4ed8;
-  font-weight: 600;
-}
-.list {
-  padding: 16rpx 24rpx 24rpx;
-}
-.result-count {
-  font-size: 22rpx;
-  color: #6b7280;
-  margin-bottom: 14rpx;
-}
-.card {
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 24rpx;
-  margin-bottom: 20rpx;
-  box-shadow: 0 4rpx 14rpx rgba(0, 0, 0, 0.04);
-}
-.card-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12rpx;
-}
-.tag {
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-size: 22rpx;
-  padding: 4rpx 14rpx;
-  border-radius: 8rpx;
-}
-.card-tags, .card-meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12rpx;
-}
-.draft-tag {
-  font-size: 22rpx;
-  color: #166534;
-  background: #dcfce7;
-  padding: 4rpx 14rpx;
-  border-radius: 8rpx;
-}
-.score {
-  font-size: 24rpx;
-  color: #dc2626;
-  font-weight: 600;
-}
-.card-title {
-  font-size: 30rpx;
-  font-weight: 600;
-  line-height: 1.45;
-  margin-bottom: 12rpx;
-}
-.card-meta {
-  font-size: 24rpx;
-  color: #6b7280;
-}
-.empty {
-  text-align: center;
-  color: #9ca3af;
-  padding: 80rpx 0;
-}
-.load-more {
-  text-align: center;
-  color: #9ca3af;
-  font-size: 24rpx;
-  padding: 20rpx 0 40rpx;
-}
+.page { padding: 0 36rpx 36rpx; }
+.header { padding-top: 42rpx; }
+.masthead, .search-box, .filter-bar, .card-top, .filter-row { display: flex; align-items: center; }
+.masthead, .filter-bar, .card-top { justify-content: space-between; gap: 16rpx; }
+.title { font-family: var(--display); font-size: 54rpx; font-weight: 700; letter-spacing: 2rpx; }
+.quick-entry, .filter-toggle { margin: 0; border-radius: 4rpx; font-size: 25rpx; font-weight: 500; }
+.quick-entry { background: var(--action); color: #fff; padding: 0 22rpx; line-height: 72rpx; }
+.quick-entry text { margin-left: 8rpx; }
+.quick-entry::after, .filter-toggle::after { border: 0; }
+.search-box { margin: 24rpx 0 22rpx; padding: 0 18rpx; background: var(--wash); border-radius: 5rpx; }
+.search-input { min-width: 0; flex: 1; font-size: 27rpx; height: 78rpx; color: var(--ink); }
+.search-btn { padding: 14rpx 0 14rpx 24rpx; font-size: 25rpx; color: var(--action); font-weight: 600; }
+.tabs { display: flex; gap: 34rpx; border-bottom: 2rpx solid var(--ink); }
+.tab-item { padding: 20rpx 0 15rpx; color: var(--muted); font-size: 27rpx; border-bottom: 5rpx solid transparent; }
+.tab-item.active { color: var(--ink); border-color: var(--ink); font-weight: 700; }
+.filter-bar { min-height: 76rpx; border-bottom: 1rpx solid var(--rule); }
+.result-count, .card-meta, .score, .empty, .load-more { font-size: 24rpx; color: var(--muted); }
+.filter-toggle { max-width: 75%; padding: 8rpx 0 8rpx 18rpx; line-height: 1.8; color: var(--action); background: transparent; }
+.filter-panel { padding: 18rpx 0; border-bottom: 1rpx solid var(--rule); }
+.filter-label { color: var(--muted); margin-right: 14rpx; font-size: 24rpx; white-space: nowrap; }
+.chip-scroll { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; }
+.chip-list { display: inline-flex; gap: 8rpx; }
+.chip { padding: 9rpx 16rpx; font-size: 24rpx; color: var(--muted); }
+.chip-active { background: var(--wash); color: var(--ink); font-weight: 700; }
+.card { padding: 27rpx 0 28rpx; border-bottom: 1rpx solid var(--rule); }
+.card-title { font-family: var(--display); font-size: 35rpx; font-weight: 700; line-height: 1.5; margin: 7rpx 0; }
+.card-tags, .card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 18rpx; }
+.tag { font-size: 23rpx; color: var(--mark); font-weight: 600; }
+.draft-tag { color: var(--action); font-size: 23rpx; text-decoration: underline; }
+.score { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.empty, .load-more { padding: 48rpx 0; text-align: center; }
 </style>

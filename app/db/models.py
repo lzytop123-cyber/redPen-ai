@@ -12,11 +12,13 @@ FlexibleJSON = JSON().with_variant(JSONB(), "postgresql")
 
 
 class User(Base):
-    """用户表（支持微信小程序 OpenID 登录 + 免费/付费精批额度管理）"""
+    """用户表（支持 PC Web 账号密码登录 + 微信小程序 OpenID 登录 + 额度管理）"""
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     openid: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    username: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True, nullable=True)
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     nickname: Mapped[str] = mapped_column(String(64), default="备考战友")
     free_quota: Mapped[int] = mapped_column(Integer, default=3)      # 新人默认送 3 次精批
     paid_quota: Mapped[int] = mapped_column(Integer, default=0)      # 按次购买的剩余次数

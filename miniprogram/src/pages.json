@@ -3,44 +3,44 @@
     {
       "path": "pages/index/index",
       "style": {
-        "navigationBarTitleText": "真题精批库"
+        "navigationBarTitleText": "知行岛"
       }
     },
     {
       "path": "pages/submit/submit",
       "style": {
-        "navigationBarTitleText": "拍照 / 提交答卷"
+        "navigationBarTitleText": "作答"
       }
     },
     {
       "path": "pages/report/report",
       "style": {
-        "navigationBarTitleText": "AI 红笔精批报告"
+        "navigationBarTitleText": "批改报告"
       }
     },
     {
       "path": "pages/history/history",
       "style": {
-        "navigationBarTitleText": "批改记录与薄弱项"
+        "navigationBarTitleText": "批改记录"
       }
     },
     {
       "path": "pages/mine/mine",
       "style": {
-        "navigationBarTitleText": "我的与额度"
+        "navigationBarTitleText": "我的"
       }
     }
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "知行岛申论精批",
-    "navigationBarBackgroundColor": "#FFFFFF",
-    "backgroundColor": "#F5F7FA"
+    "navigationBarBackgroundColor": "#FAF9F6",
+    "backgroundColor": "#FAF9F6"
   },
   "tabBar": {
     "color": "#6B7280",
-    "selectedColor": "#2563EB",
-    "backgroundColor": "#FFFFFF",
+    "selectedColor": "#294859",
+    "backgroundColor": "#FAF9F6",
     "borderStyle": "black",
     "list": [
       {

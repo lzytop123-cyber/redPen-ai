@@ -29,10 +29,32 @@ export async function adminFetch<T = any>(path: string, opts: RequestInit = {}):
   return res.json();
 }
 
-export function uploadImageUrl(filename: string): string {
-  return `/api/admin/uploads/${encodeURIComponent(filename)}?pwd=${encodeURIComponent(getAdminPwd())}`;
+export async function fetchUploadImageBlobUrl(filename: string): Promise<string> {
+  const res = await fetch(`/api/admin/uploads/${encodeURIComponent(filename)}`, {
+    headers: { "X-Admin-Password": getAdminPwd() },
+  });
+  if (!res.ok) {
+    throw new Error("原图加载失败");
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
 }
 
-export function exportCodesCsvUrl(): string {
-  return `/api/admin/codes/export?pwd=${encodeURIComponent(getAdminPwd())}`;
+export async function downloadCodesCsv(): Promise<void> {
+  const res = await fetch("/api/admin/codes/export", {
+    headers: { "X-Admin-Password": getAdminPwd() },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || "导出失败");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "zhixingdao_codes.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

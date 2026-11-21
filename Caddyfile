@@ -1,0 +1,14 @@
+{$DOMAIN} {
+    encode gzip zstd
+
+    # 限制单次上传体积，配合后端 10MB 校验
+    request_body {
+        max_size 15MB
+    }
+
+    reverse_proxy app:8000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

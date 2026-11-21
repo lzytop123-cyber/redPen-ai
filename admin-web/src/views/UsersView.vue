@@ -6,7 +6,13 @@
     </div>
 
     <div class="toolbar">
-      <input v-model="keyword" class="input" placeholder="搜索昵称或 OpenID" style="width:240px;" @keyup.enter="resetAndLoad" />
+      <input
+        v-model="keyword"
+        class="input"
+        placeholder="搜索账号、昵称或 OpenID"
+        style="width:260px;"
+        @keyup.enter="resetAndLoad"
+      />
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
         <input v-model="vipOnly" type="checkbox" @change="resetAndLoad" /> 仅看月卡生效用户
       </label>
@@ -18,7 +24,7 @@
         <tr>
           <th>ID</th>
           <th>昵称</th>
-          <th>OpenID</th>
+          <th>登录账号 / 来源</th>
           <th>累计批改</th>
           <th>免费余次</th>
           <th>付费余次</th>
@@ -31,7 +37,16 @@
         <tr v-for="u in items" :key="u.user_id">
           <td>#{{ u.user_id }}</td>
           <td><b>{{ u.nickname }}</b></td>
-          <td><code style="font-size:12px;">{{ u.openid }}</code></td>
+          <td>
+            <template v-if="u.username">
+              <span class="badge badge-blue" style="margin-right:6px;">PC</span>
+              <code style="font-size:12.5px;font-weight:600;">{{ u.username }}</code>
+            </template>
+            <template v-else>
+              <span class="badge badge-gray" style="margin-right:6px;">微信</span>
+              <code style="font-size:12px;color:#64748b;">{{ u.openid }}</code>
+            </template>
+          </td>
           <td><span class="badge badge-blue">{{ u.task_count }} 篇</span></td>
           <td>{{ u.free_quota }}</td>
           <td><b>{{ u.paid_quota }}</b></td>
@@ -40,9 +55,16 @@
             <span v-else style="color:#94a3b8;">未开通</span>
           </td>
           <td style="font-size:12px;color:#64748b;">{{ (u.created_at || "").replace("T", " ").slice(0, 16) }}</td>
-          <td>
+          <td style="display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn btn-sm btn-primary" @click="adjust(u.user_id, 5, 0)">+5次</button>
             <button class="btn btn-sm btn-success" @click="adjust(u.user_id, 0, 30)">+30天月卡</button>
+            <button
+              v-if="u.username"
+              class="btn btn-sm"
+              @click="resetPassword(u.user_id, u.username)"
+            >
+              重置密码
+            </button>
           </td>
         </tr>
       </tbody>
@@ -94,6 +116,24 @@ async function adjust(uid: number, addQuota: number, addVipDays: number) {
     body: JSON.stringify({ add_quota: addQuota, add_vip_days: addVipDays }),
   });
   load();
+}
+
+async function resetPassword(uid: number, username: string) {
+  const newPwd = prompt(`为用户 #${uid}（账号：${username}）设置新密码（至少 6 位）：`);
+  if (newPwd === null) return;
+  if (newPwd.trim().length < 6) {
+    alert("新密码至少需要 6 位字符");
+    return;
+  }
+  try {
+    await adminFetch(`/api/admin/users/${uid}/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ new_password: newPwd.trim() }),
+    });
+    alert(`已将账号 ${username} 的登录密码重置成功！`);
+  } catch (e: any) {
+    alert(e?.message || "重置密码失败");
+  }
 }
 
 onMounted(load);

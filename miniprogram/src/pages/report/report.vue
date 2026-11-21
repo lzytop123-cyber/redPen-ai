@@ -1,24 +1,9 @@
 <template>
   <view class="page">
-    <!-- 批改中：4 步仪式感实时进度条 -->
     <view v-if="status !== 'completed'" class="loading-card">
-      <view class="spinner-title">{{ status === "failed" ? "批改遇到问题" : "AI 阅卷组长正在精批中..." }}</view>
-      <view class="progress-msg">{{ progressMessage }}</view>
-
-      <view v-if="status !== 'failed'" class="step-list">
-        <view
-          v-for="(step, idx) in steps"
-          :key="step.label"
-          :class="['step-item', currentStepIndex > idx ? 'done' : currentStepIndex === idx ? 'active' : '']"
-        >
-          <text class="step-icon">{{ currentStepIndex > idx ? "✓" : currentStepIndex === idx ? "●" : "○" }}</text>
-          <text class="step-text">{{ step.label }}</text>
-        </view>
-      </view>
-
-      <view v-if="status !== 'failed'" class="tip-box">
-        💡 阅卷小贴士：{{ currentTip }}
-      </view>
+      <view class="spinner-title">{{ status === "failed" ? "这次批改未完成" : status === "pending" ? "答卷已提交" : "正在批改答卷" }}</view>
+      <view v-if="status !== 'failed'" class="progress-msg">{{ stageText }}</view>
+      <view v-if="status !== 'failed'" class="tip-box">可以先离开，稍后在「批改记录」查看结果。</view>
       <view v-if="errorMessage" class="err-msg">{{ errorMessage }}</view>
     </view>
 
@@ -26,13 +11,15 @@
     <view v-else-if="report">
       <view class="hero">
         <view class="hero-left">
-          <view class="hero-sub">AI 阅卷级精批报告</view>
+          <view class="hero-sub">练习报告 · AI 批改</view>
           <view class="hero-title">{{ report.question_title }}</view>
-          <view class="hero-meta">本次作答 {{ report.word_count }} {{ englishReport ? "词" : "字" }}</view>
         </view>
         <view class="hero-right">
           <view class="score-num">{{ report.final_score }}<text class="score-full">/{{ report.full_score }}</text></view>
-          <view class="band">{{ report.band_label }}</view>
+          <view class="hero-detail">
+            <view class="band">{{ report.band_label }}</view>
+            <view class="hero-meta">本次作答 {{ report.word_count }} {{ englishReport ? "词" : "字" }}</view>
+          </view>
         </view>
       </view>
 
@@ -48,13 +35,13 @@
       </view>
 
       <view v-if="wordWarning" class="warn-box">
-        ⚠️ {{ wordWarning }}
+        {{ wordWarning }}
       </view>
 
       <!-- 申论采分点明细 + 命中率可视化条 -->
       <view v-if="report.shenlun_detail" class="card">
         <view class="card-h-row">
-          <view class="card-h">一、标准采分点核对</view>
+          <view class="card-h">采分点</view>
           <text class="hit-summary">命中 {{ hitStats.hit }} / {{ hitStats.total }}（部分 {{ hitStats.partial }}）</text>
         </view>
 
@@ -80,7 +67,7 @@
 
       <!-- 大作文 / 考研英语维度定档 -->
       <view v-if="report.shenlun_essay_detail || report.kaoyan_detail" class="card">
-        <view class="card-h">一、官方评分维度定档</view>
+        <view class="card-h">分项评分</view>
         <view
           v-for="(d, idx) in (report.shenlun_essay_detail || report.kaoyan_detail).dimensions"
           :id="'dimension-' + idx"
@@ -98,7 +85,7 @@
       <!-- 逐句红笔批注（支持只看扣分句筛选） -->
       <view class="card">
         <view class="card-h-row">
-          <view class="card-h">二、逐句红笔批注</view>
+          <view class="card-h">逐句批注</view>
           <view class="filter-toggle" @click="onlyIssues = !onlyIssues">
             {{ onlyIssues ? "显示全部句子" : "只看批注句" }}
           </view>
@@ -125,11 +112,11 @@
       <!-- 同思路升格范文（带一键复制） -->
       <view id="upgrade" class="card">
         <view class="card-h-row">
-          <view class="card-h">三、同思路高分升格版</view>
-          <button class="copy-btn" size="mini" @click="copyUpgraded">📋 一键复制</button>
+          <view class="card-h">参考改写</view>
+          <button class="copy-btn" size="mini" @click="copyUpgraded">复制全文</button>
         </view>
         <view class="upgrade-box">{{ report.upgraded_answer }}</view>
-        <view class="imp-title">核心提分改动：</view>
+        <view class="imp-title">改写说明</view>
         <view v-for="(imp, idx) in report.key_improvements" :key="idx" class="imp-item">
           • {{ imp }}
         </view>
@@ -154,27 +141,12 @@ const issueLabel: Record<string, string> = {
   highlight: "亮点句",
 };
 
-const steps = [
-  { label: "校验答卷与字数红线" },
-  { label: "对照真题采分点与官方量表核对" },
-  { label: "生成逐句红笔批注与反幻觉核验" },
-  { label: "撰写同思路高分升格范文" },
-];
-
-const writingTips = [
-  "申论小题每条句首加 4~6 字规范总括词，阅卷老师扫一眼就能给分。",
-  "考研英语大作文避免反复使用 more and more / very important，换成地道学术词立刻升档。",
-  "申论大作文切忌脱离给定材料自说自话，至少引用 2~3 个材料原案例作论据。",
-  "字数红线非常关键：申论小题超上限 20 字以上通常会被硬性扣分。",
-];
-
 const taskId = ref("");
 const status = ref("pending");
 const progressMessage = ref("正在排队...");
 const errorMessage = ref("");
 const report = ref<any>(null);
 const onlyIssues = ref(false);
-const tickCount = ref(0);
 let timer: any = null;
 
 const advice = computed(() => selectReportAdvice(report.value || {}));
@@ -197,14 +169,10 @@ function rewrite() {
   uni.navigateTo({ url: `/pages/submit/submit?qid=${qid}&fromTask=${fromTask}` });
 }
 
-const currentTip = computed(() => writingTips[tickCount.value % writingTips.length]);
-
-const currentStepIndex = computed(() => {
-  if (status.value === "completed") return 4;
-  const msg = progressMessage.value || "";
-  if (msg.includes("Step 2") || msg.includes("升格")) return 2;
-  if (msg.includes("Step 1") || msg.includes("采分点")) return 1;
-  return Math.min(2, Math.floor(tickCount.value / 3));
+const stageText = computed(() => {
+  if (status.value === "pending") return "等待开始批改。";
+  if (progressMessage.value.includes("Step 0")) return "正在整理材料和采分点。";
+  return "正在核对作答并整理批注。";
 });
 
 const hitStats = computed(() => {
@@ -235,13 +203,12 @@ function copyUpgraded() {
   uni.setClipboardData({
     data: report.value.upgraded_answer,
     success: () => {
-      uni.showToast({ title: "升格范文已复制，快去背诵吧", icon: "none" });
+      uni.showToast({ title: "已复制参考改写", icon: "none" });
     },
   });
 }
 
 async function pollTask() {
-  tickCount.value += 1;
   const res = await request<any>({ url: `/api/grading/tasks/${encodeURIComponent(taskId.value)}` });
   status.value = res.status;
   progressMessage.value = res.progress_message || "";
@@ -268,329 +235,50 @@ onUnload(() => {
 </script>
 
 <style scoped>
-.page {
-  padding: 20rpx 24rpx 60rpx;
-}
-.loading-card {
-  background: #fff;
-  border-radius: 18rpx;
-  padding: 48rpx 32rpx;
-  margin-top: 32rpx;
-  box-shadow: 0 4rpx 18rpx rgba(0, 0, 0, 0.05);
-}
-.spinner-title {
-  font-size: 34rpx;
-  font-weight: 700;
-  color: #1e3a8a;
-  text-align: center;
-}
-.progress-msg {
-  margin-top: 14rpx;
-  color: #2563eb;
-  font-size: 25rpx;
-  text-align: center;
-}
-.step-list {
-  margin-top: 36rpx;
-  padding: 20rpx 24rpx;
-  background: #f8fafc;
-  border-radius: 14rpx;
-}
-.step-item {
-  display: flex;
-  align-items: center;
-  padding: 12rpx 0;
-  color: #9ca3af;
-  font-size: 26rpx;
-}
-.step-item.done {
-  color: #16a34a;
-  font-weight: 600;
-}
-.step-item.active {
-  color: #2563eb;
-  font-weight: 700;
-}
-.step-icon {
-  width: 40rpx;
-  font-size: 28rpx;
-}
-.tip-box {
-  margin-top: 28rpx;
-  padding: 18rpx 20rpx;
-  background: #eff6ff;
-  border-radius: 12rpx;
-  font-size: 24rpx;
-  color: #1e40af;
-  line-height: 1.55;
-}
-.err-msg {
-  margin-top: 20rpx;
-  color: #dc2626;
-  font-size: 24rpx;
-  text-align: center;
-}
-.hero {
-  background: linear-gradient(135deg, #1e3a8a, #2563eb);
-  color: #fff;
-  border-radius: 18rpx;
-  padding: 28rpx;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.hero-left {
-  flex: 1;
-  padding-right: 16rpx;
-}
-.hero-sub {
-  font-size: 22rpx;
-  opacity: 0.85;
-}
-.hero-title {
-  font-size: 30rpx;
-  font-weight: 700;
-  margin: 8rpx 0;
-}
-.hero-meta {
-  font-size: 22rpx;
-  opacity: 0.9;
-}
-.hero-right {
-  text-align: right;
-}
-.score-num {
-  font-size: 56rpx;
-  font-weight: 800;
-  line-height: 1;
-}
-.score-full {
-  font-size: 26rpx;
-  font-weight: 400;
-}
-.band {
-  font-size: 22rpx;
-  margin-top: 8rpx;
-}
-.warn-box {
-  background: #fff7ed;
-  border: 1rpx solid #fdba74;
-  color: #c2410c;
-  padding: 16rpx 20rpx;
-  border-radius: 12rpx;
-  margin-top: 16rpx;
-  font-size: 24rpx;
-}
-.card {
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 24rpx;
-  margin-top: 20rpx;
-}
-.card-h-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16rpx;
-}
-.advice-card {
-  border: 2rpx solid #bfdbfe;
-  line-height: 1.55;
-}
-.advice-label {
-  color: #1d4ed8;
-  font-size: 23rpx;
-  font-weight: 600;
-}
-.advice-title {
-  margin: 8rpx 0;
-  font-size: 31rpx;
-  font-weight: 700;
-}
-.advice-cue, .material-cue {
-  margin: 12rpx 0;
-  padding: 10rpx 16rpx;
-  border-left: 4rpx solid #93c5fd;
-  background: #eff6ff;
-  font-size: 25rpx;
-  color: #334155;
-}
-.advice-text {
-  font-size: 27rpx;
-}
-.advice-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16rpx;
-  margin-top: 18rpx;
-}
-.advice-actions button {
-  margin: 0;
-  padding: 0 22rpx;
-  line-height: 68rpx;
-  font-size: 25rpx;
-  border-radius: 10rpx;
-}
-.detail-btn {
-  color: #1d4ed8;
-  background: #eff6ff;
-}
-.rewrite-btn {
-  color: #fff;
-  background: #2563eb;
-}
-.card-h {
-  font-size: 30rpx;
-  font-weight: 700;
-  border-left: 8rpx solid #2563eb;
-  padding-left: 14rpx;
-}
-.hit-summary {
-  font-size: 23rpx;
-  color: #2563eb;
-  font-weight: 600;
-}
-.meter-wrap {
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-  margin-bottom: 16rpx;
-}
-.meter-bar {
-  flex: 1;
-  height: 16rpx;
-  background: #e5e7eb;
-  border-radius: 99rpx;
-  overflow: hidden;
-}
-.meter-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #2563eb, #16a34a);
-  border-radius: 99rpx;
-}
-.meter-pct {
-  font-size: 24rpx;
-  font-weight: 700;
-  color: #16a34a;
-}
-.filter-toggle {
-  font-size: 23rpx;
-  color: #2563eb;
-  background: #eff6ff;
-  padding: 6rpx 16rpx;
-  border-radius: 99rpx;
-}
-.copy-btn {
-  background: #eff6ff;
-  color: #1d4ed8;
-  border: 1rpx solid #93c5fd;
-  margin: 0;
-  line-height: 1.8;
-}
-.point-row {
-  padding: 14rpx 0;
-  border-bottom: 1rpx solid #f3f4f6;
-}
-.point-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.pid {
-  font-weight: 700;
-  font-size: 26rpx;
-}
-.badge {
-  font-size: 22rpx;
-  padding: 4rpx 14rpx;
-  border-radius: 99rpx;
-}
-.badge.hit {
-  background: #dcfce7;
-  color: #166534;
-}
-.badge.partial {
-  background: #fef3c7;
-  color: #92400e;
-}
-.badge.miss {
-  background: #fee2e2;
-  color: #991b1b;
-}
-.quote-box {
-  margin-top: 8rpx;
-  padding: 8rpx 12rpx;
-  background: #f0fdf4;
-  border-left: 4rpx solid #22c55e;
-  font-size: 23rpx;
-  color: #166534;
-  border-radius: 6rpx;
-}
-.point-comment {
-  font-size: 24rpx;
-  color: #4b5563;
-  margin-top: 8rpx;
-  line-height: 1.5;
-}
-.sent-box {
-  background: #f9fafb;
-  padding: 16rpx;
-  border-radius: 10rpx;
-  margin-bottom: 14rpx;
-  line-height: 1.65;
-}
-.sent-red {
-  background: #fff5f5;
-  border-left: 6rpx solid #ef4444;
-}
-.sid {
-  font-size: 22rpx;
-  font-weight: 700;
-  color: #6b7280;
-  margin-right: 10rpx;
-}
-.ann-note {
-  margin-top: 10rpx;
-  padding: 12rpx;
-  background: #fff;
-  border: 1rpx dashed #fca5a5;
-  border-radius: 8rpx;
-  font-size: 24rpx;
-}
-.ann-tag {
-  background: #ef4444;
-  color: #fff;
-  font-size: 20rpx;
-  padding: 2rpx 10rpx;
-  border-radius: 6rpx;
-  margin-right: 10rpx;
-}
-.ann-tag-good {
-  background: #22c55e;
-}
-.ann-suggest {
-  color: #1d4ed8;
-  margin-top: 6rpx;
-  font-weight: 500;
-}
-.upgrade-box {
-  background: #f0f9ff;
-  border: 1rpx solid #bae6fd;
-  padding: 20rpx;
-  border-radius: 12rpx;
-  line-height: 1.8;
-  white-space: pre-wrap;
-  font-size: 27rpx;
-}
-.imp-title {
-  font-weight: 700;
-  margin: 18rpx 0 10rpx;
-  font-size: 26rpx;
-}
-.imp-item {
-  font-size: 25rpx;
-  color: #374151;
-  line-height: 1.65;
-  margin-bottom: 6rpx;
-}
+.page { padding: 32rpx 36rpx 68rpx; overflow-wrap: anywhere; }
+.hero { padding: 10rpx 0 24rpx; border-bottom: 3rpx solid var(--ink); }
+.hero-left { min-width: 0; }
+.hero-title, .score-num, .card-h, .spinner-title { font-family: var(--display); }
+.hero-title { font-size: 39rpx; line-height: 1.4; font-weight: 700; margin: 10rpx 0; }
+.hero-meta, .hero-sub, .band, .hit-summary, .sid, .meter-pct { color: var(--muted); font-size: 24rpx; }
+.hero-right { display: flex; align-items: center; flex-wrap: wrap; gap: 20rpx; margin-top: 18rpx; }
+.hero-detail { border-left: 1rpx solid var(--rule); padding-left: 18rpx; }
+.score-num { color: var(--mark); font-size: 68rpx; line-height: 1.1; }
+.score-full { font-family: sans-serif; font-size: 25rpx; color: var(--muted); }
+.card { padding: 32rpx 0; border-bottom: 1rpx solid var(--rule); }
+.card-h-row, .point-head, .meter-wrap, .advice-actions { display: flex; align-items: center; justify-content: space-between; gap: 14rpx; flex-wrap: wrap; }
+.card-h { font-weight: 700; font-size: 35rpx; }
+.advice-card { margin-top: 22rpx; background: #f0eee6; padding: 26rpx; border-bottom: 0; }
+.advice-label { color: var(--mark); font-size: 25rpx; font-weight: 600; }
+.advice-title { margin: 8rpx 0; font-size: 33rpx; font-weight: 700; }
+.advice-text, .point-comment, .imp-item { font-size: 28rpx; line-height: 1.7; }
+.advice-actions { justify-content: flex-start; margin-top: 22rpx; }
+.advice-actions button, .copy-btn, .filter-toggle { margin: 0; font-size: 25rpx; line-height: 2; border-radius: 4rpx; }
+.advice-actions button { padding: 8rpx 20rpx; }
+.detail-btn, .copy-btn, .filter-toggle { background: transparent; color: var(--action); text-decoration: underline; text-underline-offset: 5rpx; }
+.detail-btn::after, .copy-btn::after { border: 0; }
+.rewrite-btn { background: var(--action); color: white; }
+.meter-wrap { margin: 14rpx 0; }
+.meter-bar { flex: 1; height: 5rpx; background: var(--rule); }
+.meter-fill { height: 100%; background: var(--action); }
+.point-row, .sent-box { padding: 20rpx 0; border-bottom: 1rpx solid var(--rule); }
+.point-row:last-child, .sent-box:last-child { border: 0; padding-bottom: 0; }
+.pid { font-weight: 600; }
+.badge { font-size: 23rpx; color: var(--muted); }
+.badge.partial, .badge.miss, .warn-box, .err-msg { color: var(--mark); }
+.quote-box, .material-cue, .advice-cue { font-size: 26rpx; line-height: 1.75; margin: 12rpx 0; padding: 0 0 0 16rpx; border-left: 3rpx solid var(--rule); color: var(--muted); }
+.point-comment { margin-top: 8rpx; }
+.sent-text, .upgrade-box { font-size: 30rpx; line-height: 1.85; }
+.sid { margin-right: 12rpx; }
+.ann-note { padding-left: 16rpx; border-left: 3rpx solid var(--rule); margin-top: 14rpx; font-size: 26rpx; }
+.sent-red .ann-note { border-color: #c59888; }
+.ann-tag { color: var(--mark); font-weight: 600; margin-right: 12rpx; }
+.ann-tag-good, .ann-suggest { color: var(--action); }
+.ann-suggest { margin-top: 6rpx; }
+.upgrade-box { white-space: pre-wrap; margin-top: 16rpx; }
+.imp-title { font-weight: 600; margin: 22rpx 0 8rpx; }
+.loading-card { padding: 54rpx 0 30rpx; border-bottom: 2rpx solid var(--rule); }
+.spinner-title { font-size: 44rpx; font-weight: 700; }
+.progress-msg, .tip-box, .warn-box, .err-msg { margin-top: 16rpx; font-size: 27rpx; }
+.tip-box { color: var(--muted); }
 </style>

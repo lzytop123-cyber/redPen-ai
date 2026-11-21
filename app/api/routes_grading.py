@@ -1,14 +1,15 @@
 import asyncio
 import re
+import time
 import uuid
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth_utils import get_current_user
@@ -25,8 +26,50 @@ router = APIRouter(prefix="/api/grading", tags=["AI 精批引擎"])
 UPLOAD_DIR = Path("data/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+_OCR_RATE_WINDOW_SEC = 60.0
+_OCR_MAX_PER_WINDOW = 20
+_OCR_CALL_TIMESTAMPS: dict[int, list[float]] = defaultdict(list)
+
 # 按 question_id 维度的内存互斥锁，防止并发首次提交同一道新题时重复生成采分点
 _POINT_GEN_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _check_ocr_rate_limit(user_id: int) -> None:
+    now = time.monotonic()
+    stamps = [t for t in _OCR_CALL_TIMESTAMPS[user_id] if now - t < _OCR_RATE_WINDOW_SEC]
+    if len(stamps) >= _OCR_MAX_PER_WINDOW:
+        raise HTTPException(status_code=429, detail="拍照识字操作过于频繁，请 1 分钟后再试")
+    stamps.append(now)
+    _OCR_CALL_TIMESTAMPS[user_id] = stamps
+
+
+async def _deduct_quota_atomic(db: AsyncSession, user: User) -> str:
+    """原子扣减 1 次精批额度，返回扣费来源：vip / free / paid"""
+    is_vip = bool(user.vip_expire_at and user.vip_expire_at > datetime.utcnow())
+    if is_vip:
+        return "vip"
+
+    res_free = await db.execute(
+        update(User)
+        .where(User.id == user.id, User.free_quota > 0)
+        .values(free_quota=User.free_quota - 1)
+    )
+    if res_free.rowcount == 1:
+        user.free_quota = max(0, user.free_quota - 1)
+        return "free"
+
+    res_paid = await db.execute(
+        update(User)
+        .where(User.id == user.id, User.paid_quota > 0)
+        .values(paid_quota=User.paid_quota - 1)
+    )
+    if res_paid.rowcount == 1:
+        user.paid_quota = max(0, user.paid_quota - 1)
+        return "paid"
+
+    raise HTTPException(status_code=402, detail="精批次数已用完，请先兑换体验包或开通上岸月卡")
 
 
 def _get_point_lock(question_id: str) -> asyncio.Lock:
@@ -147,8 +190,14 @@ def _attach_material_evidence(report: dict, question: Question) -> None:
                 break
 
 
-async def _execute_grading_task(task_id: str, question: Question, student_answer: str) -> None:
-    """后台异步执行 3 步精批管线（后续高并发时可直接迁移至 Redis + ARQ Worker）"""
+async def _execute_grading_task(
+    task_id: str,
+    question: Question,
+    student_answer: str,
+    user_id: int = 0,
+    charged_source: str = "vip",
+) -> None:
+    """后台异步执行 3 步精批管线（失败自动退还本次额度）"""
     use_mock = (not settings.llm_api_key or settings.llm_api_key.startswith("sk-your-")) and settings.enable_mock_fallback
 
     async def update_progress(msg: str) -> None:
@@ -189,9 +238,20 @@ async def _execute_grading_task(task_id: str, question: Question, student_answer
     except Exception as e:
         async with AsyncSessionLocal() as session:
             t = await session.get(GradingTask, task_id)
+            refund_note = ""
+            if user_id and charged_source in ("free", "paid"):
+                if charged_source == "free":
+                    await session.execute(
+                        update(User).where(User.id == user_id).values(free_quota=User.free_quota + 1)
+                    )
+                else:
+                    await session.execute(
+                        update(User).where(User.id == user_id).values(paid_quota=User.paid_quota + 1)
+                    )
+                refund_note = "（本次精批额度已自动退还）"
             if t:
                 t.status = "failed"
-                t.progress_message = "批改失败，请稍后重试"
+                t.progress_message = f"批改遇到异常，请稍后重试{refund_note}"
                 t.error_message = str(e)
                 t.finished_at = datetime.utcnow()
                 await session.commit()
@@ -204,13 +264,22 @@ async def ocr_handwriting_image(
     user: User = Depends(get_current_user),
 ):
     """
-    Step 0 接口：小程序拍照上传手写答卷照片 -> 视觉模型识别文字与字数
-    前端拿到文本后给用户 10 秒微调错别字，再调用 /submit 提交精批。
+    Step 0 接口：上传手写答卷照片 -> 视觉模型识别文字与字数（含大小/格式校验与限流）
     """
-    ext = Path(file.filename or "answer.jpg").suffix or ".jpg"
+    _check_ocr_rate_limit(user.id)
+
+    ext = (Path(file.filename or "answer.jpg").suffix or ".jpg").lower()
+    if ext not in ALLOWED_IMAGE_EXTS:
+        raise HTTPException(status_code=400, detail="仅支持 JPG / PNG / WebP / BMP 格式图片")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="上传的图片为空")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="单张图片不能超过 10MB，请压缩后重试")
+
     fname = f"{user.id}_{uuid.uuid4().hex[:12]}{ext}"
     save_path = UPLOAD_DIR / fname
-    content = await file.read()
     save_path.write_bytes(content)
 
     use_mock = (
@@ -244,19 +313,12 @@ async def submit_grading(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """提交精批任务（扣减额度 -> 立即返回 task_id -> 后台异步执行 3 步管线）"""
+    """提交精批任务（原子扣减额度 -> 立即返回 task_id -> 后台异步执行 3 步管线）"""
     q_row = await db.get(QuestionModel, req.question_id)
     if not q_row:
         raise HTTPException(status_code=404, detail="所选真题不存在")
 
-    is_vip = bool(user.vip_expire_at and user.vip_expire_at > datetime.utcnow())
-    if not is_vip:
-        if user.free_quota > 0:
-            user.free_quota -= 1
-        elif user.paid_quota > 0:
-            user.paid_quota -= 1
-        else:
-            raise HTTPException(status_code=402, detail="精批次数已用完，请先充值体验包或开通月卡")
+    charged_source = await _deduct_quota_atomic(db, user)
 
     task_id = f"task_{uuid.uuid4().hex[:16]}"
     task = GradingTask(
@@ -274,7 +336,14 @@ async def submit_grading(
     await db.commit()
 
     q_schema = _to_question_schema(q_row)
-    background_tasks.add_task(_execute_grading_task, task_id, q_schema, req.student_answer)
+    background_tasks.add_task(
+        _execute_grading_task,
+        task_id,
+        q_schema,
+        req.student_answer,
+        user.id,
+        charged_source,
+    )
 
     return {
         "task_id": task_id,
@@ -292,14 +361,7 @@ async def submit_custom_grading(
     db: AsyncSession = Depends(get_db),
 ):
     """自定义题目自由批改接口（适用于模拟卷、机构押题、随手练笔等不在真题库里的题目）"""
-    is_vip = bool(user.vip_expire_at and user.vip_expire_at > datetime.utcnow())
-    if not is_vip:
-        if user.free_quota > 0:
-            user.free_quota -= 1
-        elif user.paid_quota > 0:
-            user.paid_quota -= 1
-        else:
-            raise HTTPException(status_code=402, detail="精批次数已用完，请先充值体验包或开通月卡")
+    charged_source = await _deduct_quota_atomic(db, user)
 
     default_scores = {
         ExamType.SHENLUN_SHORT: (15.0, 120, 300),
@@ -345,7 +407,14 @@ async def submit_custom_grading(
     await db.commit()
 
     q_schema = _to_question_schema(q_row)
-    background_tasks.add_task(_execute_grading_task, task_id, q_schema, req.student_answer)
+    background_tasks.add_task(
+        _execute_grading_task,
+        task_id,
+        q_schema,
+        req.student_answer,
+        user.id,
+        charged_source,
+    )
 
     return {
         "task_id": task_id,

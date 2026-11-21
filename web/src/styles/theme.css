@@ -1,0 +1,214 @@
+:root {
+  --catalog-max: 1720px;
+  --catalog-gutter: clamp(16px, 3.5vw, 68px);
+  /* 暖宣纸 + 松烟炭黑 + 阅卷朱砂红 统一色板 */
+  --bg-canvas: #f3efe7;
+  --bg-surface: #ffffff;
+  --bg-subtle: #f7f4ec;
+  --bg-hover: #ece8de;
+  --bg-inset: #eeeae0;
+
+  --ink-primary: #1a1c1b;
+  --ink-secondary: #52514d;
+  --ink-muted: #827f78;
+  --ink-faint: #aba79e;
+
+  --border-subtle: rgba(26, 28, 27, 0.08);
+  --border-strong: rgba(26, 28, 27, 0.15);
+
+  /* 松烟炭黑（全站主交互色，与水墨 Logo 浑然一体） */
+  --brand: #1f2321;
+  --brand-hover: #101211;
+  --brand-soft: #f2efe8;
+  --brand-border: #d8d1c4;
+
+  /* 阅卷朱砂红（全站唯一核心强调色：红笔批注 / 得分印章 / 警示） */
+  --red-pen: #c63829;
+  --red-pen-hover: #a82c1f;
+  --red-pen-soft: #fdf3f2;
+  --red-pen-border: #f5cec9;
+
+  /* 采分命中黛绿（仅用于采分点命中语义反馈） */
+  --hit-green: #2c6e49;
+  --hit-green-soft: #f1f7f3;
+  --hit-green-border: #c9dfd1;
+
+  /* 荧光笔暖琥珀（部分命中 / 草稿 / 划重点） */
+  --warn-amber: #b45309;
+  --warn-amber-soft: #fef9ec;
+  --warn-amber-border: #f5df9d;
+  --highlighter: #fef08a;
+
+  /* 字体体系 */
+  --font-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", "SimSun", Georgia, serif;
+  --font-sans: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  /* 圆角与柔和空气感阴影 */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 3px rgba(20, 38, 31, 0.04), 0 1px 2px rgba(20, 38, 31, 0.02);
+  --shadow-md: 0 8px 24px rgba(20, 38, 31, 0.06), 0 2px 6px rgba(20, 38, 31, 0.03);
+  --shadow-lg: 0 20px 48px rgba(20, 38, 31, 0.12);
+
+  --nav-height: 60px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-canvas);
+  background-image:
+    radial-gradient(ellipse 80% 40% at 50% 0%, rgba(255, 253, 248, 0.72), transparent 70%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.026'/%3E%3C/svg%3E");
+  color: var(--ink-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* 精致极细滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(23, 28, 26, 0.16);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(23, 28, 26, 0.28);
+}
+
+/* 现代极简按钮系统 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-weight: 500;
+  font-size: 13.5px;
+  line-height: 1.25;
+  transition: all 0.16s cubic-bezier(0.2, 0, 0, 1);
+  white-space: nowrap;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.btn-primary {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(27, 77, 62, 0.22);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--brand-hover);
+  box-shadow: 0 4px 12px rgba(27, 77, 62, 0.2);
+}
+
+.btn-red {
+  background: var(--red-pen);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(201, 59, 43, 0.22);
+}
+
+.btn-red:hover:not(:disabled) {
+  background: var(--red-pen-hover);
+  box-shadow: 0 4px 12px rgba(201, 59, 43, 0.22);
+}
+
+.btn-outline {
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  border-color: var(--border-strong);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  border-color: rgba(23, 28, 26, 0.24);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink-secondary);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--ink-primary);
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+
+.btn-lg {
+  padding: 11px 22px;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+/* 轻学院纸质卡片 */
+.paper-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 打印报告模式 */
+@media print {
+  body {
+    background: #fff !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-full {
+    display: block !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+  .paper-card {
+    box-shadow: none !important;
+    border-color: #d1d5db !important;
+    break-inside: avoid;
+  }
+}
