@@ -111,11 +111,12 @@
                   :class="['mat-tab', activeMatIndex === idx ? 'active' : '', sectionHitCounts[idx] > 0 ? 'has-hit' : '']"
                   @click="activeMatIndex = idx"
                 >
-                  {{ sec.label }}<span v-if="sectionHitCounts[idx] > 0" class="tab-hit">{{ sectionHitCounts[idx] }}</span>
+                  {{ activeExamType === "kaoyan_396" && materialSections.length === 1 ? "原题给定材料" : sec.label }}<span v-if="sectionHitCounts[idx] > 0" class="tab-hit">{{ sectionHitCounts[idx] }}</span>
                 </button>
               </div>
               <div class="reader-controls">
                 <input
+                  v-if="activeExamType !== 'kaoyan_396' || materialSections.length > 1"
                   v-model="materialSearch"
                   type="text"
                   class="mat-search"
