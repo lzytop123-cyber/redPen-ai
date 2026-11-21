@@ -198,7 +198,6 @@ async def _execute_grading_task(
     charged_source: str = "vip",
 ) -> None:
     """后台异步执行 3 步精批管线（失败自动退还本次额度）"""
-    use_mock = (not settings.llm_api_key or settings.llm_api_key.startswith("sk-your-")) and settings.enable_mock_fallback
 
     async def update_progress(msg: str) -> None:
         async with AsyncSessionLocal() as session:
@@ -209,7 +208,11 @@ async def _execute_grading_task(
                 await session.commit()
 
     try:
-        router_client = LLMRouter()
+        mode = settings.inference_mode(settings.llm_api_key)
+        if mode == "unavailable":
+            raise RuntimeError("LLM_API_KEY 未配置，已拒绝 Mock 回退")
+        use_mock = mode == "mock"
+        router_client = None if use_mock else LLMRouter()
         if not use_mock:
             question = await ensure_cached_scoring_points(question, router_client, on_progress=update_progress)
 
@@ -278,14 +281,15 @@ async def ocr_handwriting_image(
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="单张图片不能超过 10MB，请压缩后重试")
 
+    ocr_mode = settings.inference_mode(settings.effective_vlm_api_key)
+    if ocr_mode == "unavailable":
+        raise HTTPException(status_code=503, detail="手写识别未配置可用模型密钥，已拒绝 Mock 回退")
+
     fname = f"{user.id}_{uuid.uuid4().hex[:12]}{ext}"
     save_path = UPLOAD_DIR / fname
     save_path.write_bytes(content)
 
-    use_mock = (
-        not settings.effective_vlm_api_key
-        or settings.effective_vlm_api_key.startswith("sk-your-")
-    ) and settings.enable_mock_fallback
+    use_mock = ocr_mode == "mock"
 
     if use_mock:
         text = (
@@ -314,6 +318,8 @@ async def submit_grading(
     db: AsyncSession = Depends(get_db),
 ):
     """提交精批任务（原子扣减额度 -> 立即返回 task_id -> 后台异步执行 3 步管线）"""
+    if settings.inference_mode(settings.llm_api_key) == "unavailable":
+        raise HTTPException(status_code=503, detail="精批未配置 LLM_API_KEY，已拒绝 Mock 回退")
     q_row = await db.get(QuestionModel, req.question_id)
     if not q_row:
         raise HTTPException(status_code=404, detail="所选真题不存在")
@@ -361,6 +367,8 @@ async def submit_custom_grading(
     db: AsyncSession = Depends(get_db),
 ):
     """自定义题目自由批改接口（适用于模拟卷、机构押题、随手练笔等不在真题库里的题目）"""
+    if settings.inference_mode(settings.llm_api_key) == "unavailable":
+        raise HTTPException(status_code=503, detail="精批未配置 LLM_API_KEY，已拒绝 Mock 回退")
     charged_source = await _deduct_quota_atomic(db, user)
 
     default_scores = {

@@ -38,7 +38,7 @@
         <a
           v-if="question && !isCustom"
           class="btn btn-outline btn-sm"
-          :href="`/api/questions/${encodeURIComponent(question.question_id)}/pdf`"
+          :href="apiUrl(`/api/questions/${encodeURIComponent(question.question_id)}/pdf`)"
           target="_blank"
           rel="noopener"
         >
@@ -307,7 +307,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { apiRequest, uploadOcrImage } from "../api/client";
+import { apiRequest, apiUrl, uploadOcrImage } from "../api/client";
 import practiceFigures from "../data/practice_figures.json";
 import { openAccountModal, openAuthModal, refreshUser, showToast, userState } from "../stores/auth";
 import type { ExamType, QuestionDetail, TaskStatusResp } from "../types";

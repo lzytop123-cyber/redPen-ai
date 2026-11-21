@@ -1,5 +1,18 @@
-// 后端 API 地址（本地调试连本机 FastAPI，上线替换为 HTTPS 备案域名）
-export const API_BASE_URL = "http://127.0.0.1:8000";
+// 开发默认连本机。生产构建必须在环境变量 VITE_API_BASE_URL 中提供 https 域名，例如 https://ai.islandspace.top
+const env = import.meta.env as { PROD?: boolean; VITE_API_BASE_URL?: string };
+
+function resolveApiBaseUrl(): string {
+  const configured = (env.VITE_API_BASE_URL || "").trim().replace(/\/$/, "");
+  if (env.PROD) {
+    if (!configured.startsWith("https://")) {
+      throw new Error("小程序生产构建必须设置 VITE_API_BASE_URL 为 https:// 域名");
+    }
+    return configured;
+  }
+  return configured || "http://127.0.0.1:8000";
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 const TOKEN_KEY = "ai_grading_token";
 

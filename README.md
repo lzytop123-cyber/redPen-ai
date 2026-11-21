@@ -45,4 +45,4 @@ npm run dev:mp-weixin
 # 或者直接运行 H5 网页版在浏览器预览
 npm run dev:h5
 ```
-> 提示：微信开发者工具本地联调时，请在右上角「详情 → 本地设置」勾选 **“不校验合法域名”**。上线前在 `miniprogram/src/manifest.json` 填入真实 AppID，并在 `miniprogram/src/utils/request.ts` 替换 `API_BASE_URL` 为你的 HTTPS 域名。
+> 提示：微信开发者工具本地联调时，请在右上角「详情 → 本地设置」勾选 **“不校验合法域名”**。生产构建前把 `miniprogram/env.production.example` 复制为 `miniprogram/.env.production`，并确认 `VITE_API_BASE_URL` 是 `https://` 域名。未配置该变量时生产构建会失败，开发构建仍默认 `http://127.0.0.1:8000`。不要在未完成微信后台域名校验时上传发布。
