@@ -10,12 +10,14 @@ from app.api.routes_admin import router as admin_router
 from app.api.routes_auth import router as auth_router
 from app.api.routes_grading import router as grading_router
 from app.api.routes_questions import router as questions_router
+from app.config import build_cors_middleware_kwargs, enforce_production_security, settings
 from app.db.database import AsyncSessionLocal, init_db
 from app.db.seed import seed_questions_if_empty
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    enforce_production_security(settings)
     await init_db()
     async with AsyncSessionLocal() as db:
         inserted = await seed_questions_if_empty(db)
@@ -31,13 +33,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, **build_cors_middleware_kwargs(settings))
 
 app.include_router(admin_router)
 app.include_router(auth_router)
@@ -47,7 +43,7 @@ app.include_router(grading_router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "app_env": settings.normalized_app_env}
 
 
 # 挂载独立 Vue 3 运营后台静态产物 (admin-web/dist)

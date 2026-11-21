@@ -9,7 +9,7 @@
         type="password"
         class="input"
         style="width:100%;margin-top:20px;padding:12px;"
-        placeholder="请输入管理员密码（本地默认 admin123）"
+        placeholder="请输入管理员密码"
         @keyup.enter="handleLogin"
       />
       <div v-if="loginErr" style="color:#dc2626;font-size:13px;margin-top:8px;">{{ loginErr }}</div>

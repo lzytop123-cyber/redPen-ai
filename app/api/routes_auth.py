@@ -132,11 +132,11 @@ async def login_web_account(req: LoginReq, db: AsyncSession = Depends(get_db)):
 @router.post("/wx-login", response_model=LoginResp)
 async def wx_login(req: WxLoginReq, db: AsyncSession = Depends(get_db)):
     """微信小程序 wx.login 登录换取 OpenID 与 JWT Token"""
-    if settings.wx_appid and settings.wx_secret:
+    if settings.wechat_is_configured:
         url = "https://api.weixin.qq.com/sns/jscode2session"
         params = {
-            "appid": settings.wx_appid,
-            "secret": settings.wx_secret,
+            "appid": settings.wx_appid.strip(),
+            "secret": settings.wx_secret.strip(),
             "js_code": req.code,
             "grant_type": "authorization_code",
         }
@@ -146,8 +146,10 @@ async def wx_login(req: WxLoginReq, db: AsyncSession = Depends(get_db)):
         if "openid" not in data:
             raise HTTPException(status_code=400, detail=f"微信登录失败: {data.get('errmsg', 'unknown')}")
         openid = data["openid"]
-    else:
+    elif settings.allows_dev_wechat_identity:
         openid = f"dev_{req.code[:24]}"
+    else:
+        raise HTTPException(status_code=503, detail="微信登录未配置 WX_APPID/WX_SECRET")
 
     res = await db.execute(select(User).where(User.openid == openid))
     user = res.scalar_one_or_none()

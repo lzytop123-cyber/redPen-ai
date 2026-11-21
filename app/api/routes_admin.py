@@ -664,7 +664,7 @@ async def admin_export_unused_codes(db: AsyncSession = Depends(get_db)):
 # =========================
 
 def _mask_key(key: str) -> str:
-    if not key or key.startswith("sk-your-"):
+    if not settings.key_is_configured(key):
         return "未配置"
     return f"{key[:6]}...{key[-4:]}" if len(key) > 10 else "已配置"
 
@@ -687,7 +687,7 @@ async def admin_system_info():
 
 @router.post("/system/ping-llm", dependencies=[Depends(verify_admin)])
 async def admin_ping_llm():
-    if not settings.llm_api_key or settings.llm_api_key.startswith("sk-your-"):
+    if not settings.key_is_configured(settings.llm_api_key):
         return {"ok": False, "detail": "未配置 LLM_API_KEY"}
     try:
         async with httpx.AsyncClient(timeout=10) as client:

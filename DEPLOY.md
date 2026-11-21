@@ -1,6 +1,8 @@
 # 知行岛·自习室 PC 端生产部署指南（自动 HTTPS）
 
-整套系统已通过 Docker 打包（内置 PC 前端、运营后台与 FastAPI 后端），并配好 **Caddy 全自动 HTTPS 证书**。
+在已经运行 `islandspace.top`、`admin.islandspace.top` 和 `zxd-backend`（端口 8000）的 Ubuntu 上，不要执行本文件的 Docker/Caddy 步骤。那会占用 80/443，并复用 `data/app.db`。这台机器的独立部署见 `deploy/ubuntu/README.md`：目录 `/opt/zxd-ai`，systemd 服务 `zxd-ai`，只监听 `127.0.0.1:8001`，站点 `ai.islandspace.top`。
+
+整套系统已通过 Docker 打包（内置 PC 前端、运营后台与 FastAPI 后端），并配好 **Caddy 全自动 HTTPS 证书**。下面的步骤只适用于一台可以独占 80/443 的机器。
 
 ## 1. 域名解析与服务器端口
 1. 在域名服务商后台添加一条 `A` 记录，将你的域名指向服务器公网 IP。

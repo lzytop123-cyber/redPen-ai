@@ -1,5 +1,21 @@
 const TOKEN_KEY = "zxd_pc_token";
 
+function resolveApiBase(): string {
+  const raw = (import.meta.env.VITE_API_BASE ?? "").trim().replace(/\/$/, "");
+  if (!raw) return "";
+  if (import.meta.env.PROD && !raw.startsWith("https://")) {
+    throw new Error("生产构建的 VITE_API_BASE 必须是 https:// 开头，或留空以使用同源 /api");
+  }
+  return raw;
+}
+
+const API_BASE = resolveApiBase();
+
+export function apiUrl(path: string): string {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE}${normalized}`;
+}
+
 export function getToken(): string {
   return localStorage.getItem(TOKEN_KEY) || "";
 }
@@ -43,7 +59,7 @@ export async function apiRequest<T = any>(
 
   let resp: Response;
   try {
-    resp = await fetch(url, {
+    resp = await fetch(apiUrl(url), {
       method: options.method || "GET",
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
@@ -87,7 +103,7 @@ export async function uploadOcrImage(
 
   let resp: Response;
   try {
-    resp = await fetch(`/api/grading/ocr?exam_type=${encodeURIComponent(examType)}`, {
+    resp = await fetch(apiUrl(`/api/grading/ocr?exam_type=${encodeURIComponent(examType)}`), {
       method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: form,

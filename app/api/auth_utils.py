@@ -49,8 +49,8 @@ async def get_current_user(
             raise HTTPException(status_code=401, detail="用户不存在")
         return user
 
-    # 本地联调兜底：未传 Token 时自动返回/创建一个默认测试账号
-    if settings.enable_mock_fallback:
+    # 仅开发环境且 ENABLE_MOCK_FALLBACK=true 时保留无 Token 测试账号。生产环境一律 401。
+    if settings.allows_anonymous_dev_user:
         res = await db.execute(select(User).where(User.openid == "dev_local_user"))
         user = res.scalar_one_or_none()
         if not user:
@@ -60,4 +60,4 @@ async def get_current_user(
             await db.refresh(user)
         return user
 
-    raise HTTPException(status_code=401, detail="请先登录微信小程序")
+    raise HTTPException(status_code=401, detail="请先登录")

@@ -1,0 +1,42 @@
+[Unit]
+Description=知行岛 AI 精批 zxd-ai
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zxd-ai
+Group=zxd-ai
+WorkingDirectory=/opt/zxd-ai
+Environment=APP_ENV=production
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/zxd-ai/.env
+ExecStartPre=/opt/zxd-ai/.venv/bin/python -m app.preflight
+ExecStart=/opt/zxd-ai/deploy/ubuntu/run.sh
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=180
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+ReadWritePaths=/opt/zxd-ai/data
+
+MemoryHigh=640M
+MemoryMax=768M
+CPUQuota=150%
+Nice=5
+OOMScoreAdjust=400
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
