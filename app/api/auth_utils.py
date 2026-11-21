@@ -33,8 +33,8 @@ def verify_access_token(token: str) -> int:
         if payload.get("exp", 0) < time.time():
             raise ValueError("Token expired")
         return int(payload["uid"])
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"无效或过期的登录凭证: {e}")
+    except Exception:
+        raise HTTPException(status_code=401, detail="登录状态已失效，请重新登录")
 
 
 async def get_current_user(

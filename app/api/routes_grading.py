@@ -55,18 +55,20 @@ async def _deduct_quota_atomic(db: AsyncSession, user: User) -> str:
         update(User)
         .where(User.id == user.id, User.free_quota > 0)
         .values(free_quota=User.free_quota - 1)
+        .execution_options(synchronize_session=False)
     )
     if res_free.rowcount == 1:
-        user.free_quota = max(0, user.free_quota - 1)
+        await db.refresh(user)
         return "free"
 
     res_paid = await db.execute(
         update(User)
         .where(User.id == user.id, User.paid_quota > 0)
         .values(paid_quota=User.paid_quota - 1)
+        .execution_options(synchronize_session=False)
     )
     if res_paid.rowcount == 1:
-        user.paid_quota = max(0, user.paid_quota - 1)
+        await db.refresh(user)
         return "paid"
 
     raise HTTPException(status_code=402, detail="精批次数已用完，请先兑换体验包或开通上岸月卡")

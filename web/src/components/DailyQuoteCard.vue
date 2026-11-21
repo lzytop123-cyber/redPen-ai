@@ -98,12 +98,31 @@ interface CountdownConfig {
 
 const COUNTDOWN_KEY = "zxd_exam_countdown";
 
-const now = new Date();
-const curYear = now.getFullYear();
+// 固定按北京时间（Asia/Shanghai）解析当日日期，避免海外/UTC 浏览器显示昨天
+function getBeijingDateParts() {
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
+  return {
+    year: Number(get("year")) || new Date().getFullYear(),
+    month: Number(get("month")) || new Date().getMonth() + 1,
+    day: Number(get("day")) || new Date().getDate(),
+    weekday: get("weekday") || "今日",
+  };
+}
+
+const bjNow = getBeijingDateParts();
+const curYear = bjNow.year;
 
 function nextDate(month: number, day: number): string {
-  const candidate = new Date(curYear, month - 1, day);
-  const year = candidate.getTime() < now.getTime() - 86400000 ? curYear + 1 : curYear;
+  const todayStamp = Date.UTC(bjNow.year, bjNow.month - 1, bjNow.day);
+  const candidateStamp = Date.UTC(curYear, month - 1, day);
+  const year = candidateStamp < todayStamp ? curYear + 1 : curYear;
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
@@ -155,9 +174,9 @@ function saveCountdown() {
 const daysLeft = computed(() => {
   const [y, m, d] = countdown.value.date.split("-").map(Number);
   if (!y || !m || !d) return 0;
-  const target = new Date(y, m - 1, d);
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.round((target.getTime() - today.getTime()) / 86400000);
+  const target = Date.UTC(y, m - 1, d);
+  const today = Date.UTC(bjNow.year, bjNow.month - 1, bjNow.day);
+  return Math.round((target - today) / 86400000);
 });
 
 const EXAM_QUOTES: QuoteItem[] = [
@@ -182,11 +201,10 @@ const EXAM_QUOTES: QuoteItem[] = [
   { text: "Technology is a useful servant but a dangerous master.", from: "C. L. Lange", topic: "英语 · 科技" },
 ];
 
-const dayNum = String(now.getDate()).padStart(2, "0");
+const dayNum = String(bjNow.day).padStart(2, "0");
 const MONTHS = ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"];
-const WEEKS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-const monthLabel = MONTHS[now.getMonth()];
-const weekLabel = WEEKS[now.getDay()];
+const monthLabel = MONTHS[bjNow.month - 1] || `${bjNow.month}月`;
+const weekLabel = bjNow.weekday;
 
 const sourceMode = ref<"exam" | "hitokoto">("exam");
 const examIndex = ref(0);
