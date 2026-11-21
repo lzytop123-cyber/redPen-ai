@@ -135,7 +135,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { adminFetch, fetchUploadImageBlobUrl } from "../api";
+import { adminFetch, fetchUploadImageBlobUrl, formatBeijingTime } from "../api";
 
 const status = ref("");
 const examType = ref("");
@@ -161,7 +161,7 @@ watch(detail, (val) => {
 onBeforeUnmount(revokeDetailImg);
 
 function formatTime(v: string) {
-  return v ? v.replace("T", " ").slice(0, 16) : "";
+  return formatBeijingTime(v);
 }
 
 async function load() {

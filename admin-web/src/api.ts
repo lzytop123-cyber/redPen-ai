@@ -74,3 +74,26 @@ export async function downloadCodesCsv(): Promise<void> {
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+/**
+ * 将后端返回的 UTC 时间字符串（如 "2026-11-21T10:03:12.345"）转换为北京时间（UTC+8）"YYYY-MM-DD HH:mm"
+ */
+export function formatBeijingTime(iso?: string | null, dateOnly = false): string {
+  if (!iso) return "";
+  const raw = iso.trim();
+  const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(raw);
+  const d = new Date(hasTz ? raw : `${raw.replace(" ", "T")}Z`);
+  if (Number.isNaN(d.getTime())) {
+    return raw.replace("T", " ").slice(0, dateOnly ? 10 : 16);
+  }
+  const bjMs = d.getTime() + 8 * 3600 * 1000;
+  const bj = new Date(bjMs);
+  const yyyy = bj.getUTCFullYear();
+  const mm = String(bj.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(bj.getUTCDate()).padStart(2, "0");
+  if (dateOnly) return `${yyyy}-${mm}-${dd}`;
+  const hh = String(bj.getUTCHours()).padStart(2, "0");
+  const min = String(bj.getUTCMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
+

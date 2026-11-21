@@ -64,7 +64,9 @@ def verify_admin(
 @router.get("/stats", dependencies=[Depends(verify_admin)])
 async def admin_stats(db: AsyncSession = Depends(get_db)):
     now = datetime.utcnow()
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    bj_now = now + timedelta(hours=8)
+    bj_today_start = bj_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = bj_today_start - timedelta(hours=8)
 
     total_users = await db.scalar(select(func.count(User.id))) or 0
     today_users = await db.scalar(select(func.count(User.id)).where(User.created_at >= today_start)) or 0
@@ -95,18 +97,19 @@ async def admin_stats(db: AsyncSession = Depends(get_db)):
     unused_codes = await db.scalar(select(func.count(RedeemCode.code)).where(RedeemCode.is_used == 0)) or 0
     used_codes = await db.scalar(select(func.count(RedeemCode.code)).where(RedeemCode.is_used == 1)) or 0
 
-    # 近 7 天批改趋势
+    # 近 7 天批改趋势（按北京时间 UTC+8 自然日统计）
     seven_days_ago = today_start - timedelta(days=6)
+    bj_seven_days_ago = bj_today_start - timedelta(days=6)
     recent_dates = (
         await db.execute(select(GradingTask.created_at).where(GradingTask.created_at >= seven_days_ago))
     ).scalars().all()
     day_counts: dict[str, int] = {}
     for i in range(7):
-        d_str = (seven_days_ago + timedelta(days=i)).strftime("%m-%d")
+        d_str = (bj_seven_days_ago + timedelta(days=i)).strftime("%m-%d")
         day_counts[d_str] = 0
     for dt in recent_dates:
         if dt:
-            k = dt.strftime("%m-%d")
+            k = (dt + timedelta(hours=8)).strftime("%m-%d")
             if k in day_counts:
                 day_counts[k] += 1
     trend_7d = [{"date": k, "count": v} for k, v in day_counts.items()]
@@ -650,7 +653,8 @@ async def admin_export_unused_codes(db: AsyncSession = Depends(get_db)):
     writer = csv.writer(buf)
     writer.writerow(["兑换码", "套餐名称", "精批次数", "月卡天数", "创建时间"])
     for r in rows:
-        writer.writerow([r.code, r.plan_name, r.add_quota, r.add_vip_days, r.created_at.strftime("%Y-%m-%d %H:%M")])
+        bj_time = (r.created_at + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M") if r.created_at else ""
+        writer.writerow([r.code, r.plan_name, r.add_quota, r.add_vip_days, bj_time])
     csv_bytes = ("\ufeff" + buf.getvalue()).encode("utf-8")
     return Response(
         content=csv_bytes,

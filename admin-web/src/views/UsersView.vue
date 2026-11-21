@@ -51,10 +51,10 @@
           <td>{{ u.free_quota }}</td>
           <td><b>{{ u.paid_quota }}</b></td>
           <td>
-            <span v-if="u.is_vip" class="badge badge-green">至 {{ (u.vip_expire_at || "").slice(0, 10) }}</span>
+            <span v-if="u.is_vip" class="badge badge-green">至 {{ formatBeijingTime(u.vip_expire_at, true) }}</span>
             <span v-else style="color:#94a3b8;">未开通</span>
           </td>
-          <td style="font-size:12px;color:#64748b;">{{ (u.created_at || "").replace("T", " ").slice(0, 16) }}</td>
+          <td style="font-size:12px;color:#64748b;">{{ formatBeijingTime(u.created_at) }}</td>
           <td style="display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn btn-sm btn-primary" @click="adjust(u.user_id, 5, 0)">+5次</button>
             <button class="btn btn-sm btn-success" @click="adjust(u.user_id, 0, 30)">+30天月卡</button>
@@ -82,7 +82,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { adminFetch } from "../api";
+import { adminFetch, formatBeijingTime } from "../api";
 
 const keyword = ref("");
 const vipOnly = ref(false);

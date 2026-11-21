@@ -56,7 +56,7 @@
           <td>+{{ r.add_quota }} 次 / +{{ r.add_vip_days }} 天</td>
           <td><span :class="['badge', r.is_used ? 'badge-gray' : 'badge-green']">{{ r.is_used ? "已核销" : "可用" }}</span></td>
           <td>{{ r.used_by_user_id ? `#${r.used_by_user_id}` : "-" }}</td>
-          <td style="font-size:12px;color:#64748b;">{{ (r.created_at || "").replace("T", " ").slice(0, 16) }}</td>
+          <td style="font-size:12px;color:#64748b;">{{ formatBeijingTime(r.created_at) }}</td>
           <td>
             <button v-if="!r.is_used" class="btn btn-sm" @click="copyOne(r.code)">复制</button>
             <button v-if="!r.is_used" class="btn btn-sm btn-danger" @click="deleteCode(r.code)">作废</button>
@@ -77,7 +77,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { adminFetch, downloadCodesCsv } from "../api";
+import { adminFetch, downloadCodesCsv, formatBeijingTime } from "../api";
 
 async function handleExportCsv() {
   try {
