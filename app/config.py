@@ -13,8 +13,8 @@ _JWT_PLACEHOLDERS = (
     "请替换为至少32位随机字符串",
     "__set_on_server__",
 )
-_ADMIN_PLACEHOLDERS = (
-    "admin123",
+_ADMIN_DEFAULT_PASSWORD = "admin123"
+_ADMIN_UNSET_PLACEHOLDERS = (
     "change-me-strong-admin-password",
     "change-me",
     "请替换为强管理员密码",
@@ -70,6 +70,9 @@ class Settings(BaseSettings):
 
     # Local dev helper: fallback to mock grading if API key not set
     enable_mock_fallback: bool = True
+
+    # 生产默认拒绝短口令和代码内默认管理员口令。只有显式设为 true 才允许运营者自行承担风险。
+    allow_weak_admin_password: bool = False
 
     @property
     def normalized_app_env(self) -> str:
@@ -138,6 +141,18 @@ def _contains_placeholder(value: str, placeholders: tuple[str, ...]) -> bool:
     return any(item.lower() in lowered for item in placeholders)
 
 
+def _admin_password_rejected(admin: str, allow_weak: bool) -> bool:
+    """空白和未配置占位符始终拒绝。弱口令只在专用开关精确为 true 时放行。"""
+    if admin != admin.strip() or not admin.strip():
+        return True
+    password = admin.strip()
+    if _contains_placeholder(password, _ADMIN_UNSET_PLACEHOLDERS):
+        return True
+    if allow_weak:
+        return False
+    return len(password) < 12 or _contains_placeholder(password, (_ADMIN_DEFAULT_PASSWORD,))
+
+
 def production_security_errors(cfg: Settings) -> list[str]:
     """返回阻止生产启动的原因。只包含变量名，不回显秘密本身。"""
     env_name = cfg.normalized_app_env
@@ -151,11 +166,7 @@ def production_security_errors(cfg: Settings) -> list[str]:
     admin = cfg.admin_password or ""
     if jwt != jwt.strip() or len(jwt.strip()) < 32 or _contains_placeholder(jwt.strip(), _JWT_PLACEHOLDERS):
         errors.append("JWT_SECRET 未设置为至少 32 位的非默认值")
-    if (
-        admin != admin.strip()
-        or len(admin.strip()) < 12
-        or _contains_placeholder(admin.strip(), _ADMIN_PLACEHOLDERS)
-    ):
+    if _admin_password_rejected(admin, cfg.allow_weak_admin_password is True):
         errors.append("ADMIN_PASSWORD 未设置为至少 12 位的非默认值")
     if jwt.strip() and admin.strip() and jwt.strip() == admin.strip():
         errors.append("JWT_SECRET 与 ADMIN_PASSWORD 不能相同")

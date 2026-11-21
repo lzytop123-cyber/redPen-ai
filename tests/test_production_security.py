@@ -149,6 +149,7 @@ class ProductionSecurityTests(unittest.TestCase):
         self.assertNotIn("dev-secret-change-in-prod", combined)
         self.assertNotIn("admin123", combined)
 
+        env.pop("ALLOW_WEAK_ADMIN_PASSWORD", None)
         env["JWT_SECRET"] = _TEST_JWT
         env["ADMIN_PASSWORD"] = _TEST_ADMIN
         env["ENABLE_MOCK_FALLBACK"] = "false"
@@ -165,6 +166,106 @@ class ProductionSecurityTests(unittest.TestCase):
         self.assertEqual(ok.returncode, 0, ok.stderr)
         self.assertNotIn(env["JWT_SECRET"], ok.stdout + ok.stderr)
         self.assertNotIn(env["ADMIN_PASSWORD"], ok.stdout + ok.stderr)
+
+    def test_default_admin_password_stays_rejected_unless_opt_in(self):
+        weak = _valid_production(admin_password="admin123")
+        errors = production_security_errors(weak)
+        self.assertTrue(any(item.startswith("ADMIN_PASSWORD") for item in errors))
+        self.assertFalse(any(item.startswith("JWT_SECRET") for item in errors))
+        self.assertNotIn("admin123", " ".join(errors))
+
+        explicit_false = _valid_production(admin_password="admin123", allow_weak_admin_password=False)
+        self.assertTrue(any(item.startswith("ADMIN_PASSWORD") for item in production_security_errors(explicit_false)))
+
+        opted = _valid_production(admin_password="admin123", allow_weak_admin_password=True)
+        self.assertEqual(production_security_errors(opted), [])
+
+        unset = _valid_production(admin_password="__SET_ON_SERVER__", allow_weak_admin_password=True)
+        padded = _valid_production(admin_password="admin123 ", allow_weak_admin_password=True)
+        self.assertTrue(any(item.startswith("ADMIN_PASSWORD") for item in production_security_errors(unset)))
+        self.assertTrue(any(item.startswith("ADMIN_PASSWORD") for item in production_security_errors(padded)))
+
+        jwt_errors = production_security_errors(
+            _valid_production(
+                admin_password="admin123",
+                allow_weak_admin_password=True,
+                jwt_secret="dev-secret-change-in-prod",
+            )
+        )
+        self.assertTrue(any(item.startswith("JWT_SECRET") for item in jwt_errors))
+        self.assertFalse(any(item.startswith("ADMIN_PASSWORD") for item in jwt_errors))
+        self.assertNotIn("admin123", " ".join(jwt_errors))
+
+        for overrides in (
+            {"enable_mock_fallback": True},
+            {"redis_url": "redis://127.0.0.1:6379/0"},
+            {"cors_origins": "*"},
+            {"database_url": "sqlite+aiosqlite:////opt/zxd-ai/data/app.db"},
+        ):
+            blocked = production_security_errors(
+                _valid_production(admin_password="admin123", allow_weak_admin_password=True, **overrides)
+            )
+            self.assertTrue(blocked)
+            self.assertFalse(any(item.startswith("ADMIN_PASSWORD") for item in blocked))
+
+        env = os.environ.copy()
+        for name in (
+            "JWT_SECRET",
+            "ADMIN_PASSWORD",
+            "ENABLE_MOCK_FALLBACK",
+            "DATABASE_URL",
+            "APP_ENV",
+            "ALLOW_WEAK_ADMIN_PASSWORD",
+            "REDIS_URL",
+            "CORS_ORIGINS",
+        ):
+            env.pop(name, None)
+        env.update(
+            {
+                "APP_ENV": "production",
+                "JWT_SECRET": _TEST_JWT,
+                "ADMIN_PASSWORD": "admin123",
+                "ENABLE_MOCK_FALLBACK": "false",
+                "DATABASE_URL": "sqlite+aiosqlite:////tmp/zxd-ai-preflight/zxd-ai.db",
+                "REDIS_URL": "",
+                "CORS_ORIGINS": "",
+            }
+        )
+        refused = subprocess.run(
+            [sys.executable, "-c", "import app.config"],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(refused.returncode, 0)
+        refused_text = refused.stdout + refused.stderr
+        self.assertIn("ADMIN_PASSWORD", refused_text)
+        self.assertNotIn("admin123", refused_text)
+
+        env["ALLOW_WEAK_ADMIN_PASSWORD"] = "true"
+        allowed = subprocess.run(
+            [sys.executable, "-c", "import app.config"],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(allowed.returncode, 0, allowed.stderr)
+        self.assertNotIn("admin123", allowed.stdout + allowed.stderr)
+
+        env["JWT_SECRET"] = "dev-secret-change-in-prod"
+        jwt_blocked = subprocess.run(
+            [sys.executable, "-c", "import app.config"],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(jwt_blocked.returncode, 0)
+        jwt_text = jwt_blocked.stdout + jwt_blocked.stderr
+        self.assertIn("JWT_SECRET", jwt_text)
+        self.assertNotIn("ADMIN_PASSWORD", jwt_text)
 
     def test_inference_mode_never_calls_a_provider(self):
         with patch("openai.AsyncOpenAI", side_effect=AssertionError("provider client constructed")):

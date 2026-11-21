@@ -15,6 +15,10 @@ def main() -> int:
     print(f"app_env={settings.normalized_app_env}")
     print(f"database_filename={filename}")
     print(f"mock_fallback={'true' if settings.enable_mock_fallback else 'false'}")
+    print(
+        "allow_weak_admin_password="
+        + ("true" if settings.allow_weak_admin_password else "false")
+    )
     print(f"llm_configured={'yes' if settings.key_is_configured(settings.llm_api_key) else 'no'}")
     print(
         "vlm_configured="
