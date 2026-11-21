@@ -48,7 +48,7 @@ PC 站使用 hash 路由，深链接不需要额外的 history fallback。
 `APP_ENV=production` 时，下面任一不满足，进程退出，不建库、不提供开发身份：
 
 - `JWT_SECRET` 至少 32 位，且不是仓库里的默认或占位字符串
-- `ADMIN_PASSWORD` 至少 12 位，且不是 `admin123` 或其他示例口令
+- `ADMIN_PASSWORD` 至少 12 位，且不是 `admin123` 或其他示例口令。`ALLOW_WEAK_ADMIN_PASSWORD` 默认 false；只有显式设为 true 才允许短口令或 `admin123`，该口令容易被猜中。
 - 两个秘密不能相同
 - `ENABLE_MOCK_FALLBACK=false`
 - `DATABASE_URL` 是绝对路径 SQLite，文件名必须是 `zxd-ai.db`
@@ -64,7 +64,7 @@ PC 站使用 hash 路由，深链接不需要额外的 history fallback。
 启动所必需：
 
 - `JWT_SECRET`：`openssl rand -hex 32`
-- `ADMIN_PASSWORD`：另一串独立的长口令
+- `ADMIN_PASSWORD`：管理员口令。默认必须是至少 12 位的非默认值；要使用已知弱口令时，按上一节把 `ALLOW_WEAK_ADMIN_PASSWORD` 显式设为 true。
 
 精批和手写识别要可用时才需要：
 
