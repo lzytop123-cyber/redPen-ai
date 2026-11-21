@@ -301,7 +301,10 @@ async def ocr_handwriting_image(
         )
     else:
         router_client = LLMRouter()
-        text = await router_client.ocr_handwriting(save_path)
+        text = await router_client.ocr_handwriting(save_path, exam_type=exam_type)
+
+    if not text or not text.strip():
+        raise HTTPException(status_code=422, detail="未从图片中识别到清晰文字，请保持光线充足、拍全页面后重试")
 
     wc = count_words(text, ExamType(exam_type))
     return {

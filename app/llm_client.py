@@ -96,9 +96,9 @@ class LLMRouter:
                 )
         raise RuntimeError(f"LLM 结构化输出连续 {max_retries + 1} 次校验失败: {last_err}")
 
-    async def ocr_handwriting(self, image_path: str | Path) -> str:
+    async def ocr_handwriting(self, image_path: str | Path, exam_type: str = "shenlun_short") -> str:
         """
-        Step 0: 使用多模态视觉大模型识别手写答卷照片（支持申论方格纸和英文手写稿）
+        Step 0: 使用多模态视觉大模型识别答卷照片（支持申论方格纸、英文手写稿及印刷练习卷）
         """
         path = Path(image_path)
         if not path.exists():
@@ -108,36 +108,39 @@ class LLMRouter:
         mime_type = mime_type or "image/jpeg"
         b64_data = base64.b64encode(path.read_bytes()).decode("utf-8")
 
-        resp = await self.vlm_client.chat.completions.create(
-            model=settings.vlm_model,
-            temperature=0.05,
-            max_tokens=4096,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "你是一位高精度的中文/英文文档与手写答卷 OCR 专家。\n"
-                        "要求：\n"
-                        "1. 完整、逐字转录图片主画面中的全部文字（无论是手写体还是印刷体，不得遗漏任何段落，不得提前截断）；\n"
-                        "2. 如果图片边缘露出相邻另一页被裁切了一半的残缺边缘文字，请忽略残缺页，只完整转录画面主体那一页；\n"
-                        "3. 同一自然段内因方格纸或纸张行宽折行的文字，必须自动拼接成连续完整的句子，不要每行硬换行；仅在真正的分段或序号（如 1./2./（1）/一、）处换行；\n"
-                        "4. 忽略被明显划掉/涂改的废字，不要帮考生修改语法错误或错别字（原样还原以便后续批改）；\n"
-                        "5. 只输出识别出的正文文本，不要输出任何额外解释、引号或 Markdown 标记。"
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "请从头到尾完整转录图片主体中的全部文字内容，不要漏段："},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{mime_type};base64,{b64_data}",
-                                "detail": "high",
-                            },
-                        },
-                    ],
-                },
-            ],
+        if exam_type == "kaoyan_english":
+            extra_rule = "若为英文作答，必须原样保留考生拼写（严禁自动纠正拼写或语法错误），行尾连字符断词请自动拼接为完整单词。"
+        else:
+            extra_rule = "若为申论方格稿纸，请忽略格子线及格纸边缘印刷的字数角标（如“100字”“300字”页码标记）。"
+
+        prompt_text = (
+            "请直接把图片主画面中的全部正文文字完整转录出来（无需长篇推理分析）：\n"
+            "1. 无论是手写体还是印刷体均需从头到尾完整转录，不得漏段或提前截断；\n"
+            "2. 若图片边缘露出装订线外相邻另一页被裁切一半的残缺字，请忽略残缺边缘页，只转录画面主体页；\n"
+            "3. 同一自然段内因方格纸或行宽折行的文字请自动拼成连续完整句子，仅在真正分段或序号（如 1./（1）/一、）处换行；\n"
+            f"4. 忽略明显涂改划掉的废字，不要帮考生改错别字。{extra_rule}\n"
+            "5. 只输出识别出的正文纯文本，不要输出任何额外解释。"
         )
-        return (resp.choices[0].message.content or "").strip()
+
+        for attempt in range(2):
+            cur_prompt = prompt_text if attempt == 0 else "请直接完整输出这张图片中的所有正文文字，不要遗漏："
+            resp = await self.vlm_client.chat.completions.create(
+                model=settings.vlm_model,
+                temperature=0.0,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": cur_prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:{mime_type};base64,{b64_data}"},
+                            },
+                        ],
+                    },
+                ],
+            )
+            content = (resp.choices[0].message.content or "").strip()
+            if content:
+                return content
+        return ""

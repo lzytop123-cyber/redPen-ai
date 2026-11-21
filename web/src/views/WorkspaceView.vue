@@ -253,6 +253,14 @@
             <button class="thumb-del" @click="removePhoto(idx)" title="移除">×</button>
           </div>
           <span class="thumb-note">点击缩略图可放大核对识别错别字</span>
+          <button
+            v-if="!answerText.trim() && previewPhotos.some((p) => p.text)"
+            type="button"
+            class="btn btn-outline btn-sm"
+            @click="restoreOcrText"
+          >
+            恢复识别文字
+          </button>
         </div>
 
         <div class="textarea-wrap">
@@ -592,21 +600,40 @@ async function processOcrFiles(files: File[]) {
   }
 
   ocrLoading.value = true;
+  let successCount = 0;
   try {
     for (let i = 0; i < list.length; i++) {
       const file = list[i];
-      showToast(`正在识别第 ${i + 1}/${list.length} 页手写答卷...`, "info", 2200);
+      showToast(`正在高清识别第 ${i + 1}/${list.length} 页（约 5~10 秒）...`, "info", 3200);
       const res = await uploadOcrImage(file, activeExamType.value);
-      const recognized = res.recognized_text.trim();
+      const recognized = (res.recognized_text || "").trim();
+      if (!recognized) {
+        showToast(`第 ${i + 1} 页未识别出文字，请确保画面清晰后重传`, "warn", 3600);
+        continue;
+      }
       answerText.value += (answerText.value ? "\n" : "") + recognized;
       imagePath.value = res.image_path;
       previewPhotos.value.push({ url: URL.createObjectURL(file), text: recognized });
+      successCount += 1;
     }
-    showToast("手写照片识别完成，请核对错别字后提交", "success");
+    if (successCount > 0) {
+      showToast("照片识别完成，请核对后提交批改", "success");
+    }
   } catch (err: any) {
     showToast(err?.message || "照片识别失败，请重试", "error");
   } finally {
     ocrLoading.value = false;
+  }
+}
+
+function restoreOcrText() {
+  const joined = previewPhotos.value
+    .map((p) => p.text.trim())
+    .filter(Boolean)
+    .join("\n");
+  if (joined) {
+    answerText.value = joined;
+    showToast("已恢复照片识别文字", "success");
   }
 }
 

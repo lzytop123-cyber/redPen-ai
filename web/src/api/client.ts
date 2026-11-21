@@ -88,6 +88,59 @@ export async function apiRequest<T = any>(
   return data as T;
 }
 
+async function compressImageForOcr(file: File): Promise<File> {
+  // 对超过 600KB 的手机原图自动缩放到长边 1800px 并转为高清晰度 JPEG，自动摆正 EXIF 方向且提速 3 倍
+  if (file.size <= 600 * 1024 && (file.type === "image/jpeg" || file.type === "image/png")) {
+    return file;
+  }
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const maxSide = 1800;
+      let { width, height } = img;
+      if (width > maxSide || height > maxSide) {
+        if (width >= height) {
+          height = Math.round((height * maxSide) / width);
+          width = maxSide;
+        } else {
+          width = Math.round((width * maxSide) / height);
+          height = maxSide;
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(file);
+        return;
+      }
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            resolve(file);
+            return;
+          }
+          const baseName = (file.name || "handwriting").replace(/\.[^.]+$/, "");
+          resolve(new File([blob], `${baseName}.jpg`, { type: "image/jpeg" }));
+        },
+        "image/jpeg",
+        0.86
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(file);
+    };
+    img.src = url;
+  });
+}
+
 export async function uploadOcrImage(
   file: File,
   examType: string
@@ -98,8 +151,9 @@ export async function uploadOcrImage(
   mock_mode: boolean;
 }> {
   const token = getToken();
+  const optimizedFile = await compressImageForOcr(file);
   const form = new FormData();
-  form.append("file", file, file.name || "handwriting.png");
+  form.append("file", optimizedFile, optimizedFile.name || "handwriting.jpg");
 
   let resp: Response;
   try {
