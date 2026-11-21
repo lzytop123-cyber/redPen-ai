@@ -1,5 +1,5 @@
 <template>
-  <div class="feedback-root no-print">
+  <div class="feedback-root no-print" :class="{ 'hide-mobile': page === 'workspace' }">
     <button
       class="fb-fab"
       type="button"
@@ -285,5 +285,17 @@ async function copyFeedback() {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+@media (max-width: 760px) {
+  .feedback-root.hide-mobile .fb-fab {
+    display: none;
+  }
+  .fb-fab {
+    right: 14px;
+    bottom: 14px;
+    padding: 6px 11px;
+    font-size: 12px;
+  }
 }
 </style>
